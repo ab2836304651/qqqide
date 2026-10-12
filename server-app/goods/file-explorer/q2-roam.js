@@ -1240,8 +1240,9 @@ function buildFileItem(entry, fullPath) {
 	item.dataset.path = fullPath;
 	item.dataset.type = entry.isDir ? 'folder' : 'file';
 	item.dataset.name = entry.name;
-	// ★ 家目录恒红（与 AI 视口同特性 2026-08-31）：_qqq/_qqqvault 加粗变红且永不改色
-	if (entry.isDir && (entry.name === '_qqq' || entry.name === '_qqqvault')) item.classList.add('roam-home-dir');
+	// ★ 恒红目录（规则清单唯一源 core/qqq-reddirs.js，与 AI 视口两处同源）：
+	//   _qqq / _qqqvault / _qqq/quests —— 加粗变红且永不改色
+	if (entry.isDir && window.qqqRedDir(entry.name, fullPath)) item.classList.add('roam-home-dir');
 
 	var clone = document.importNode(entry.isDir ? _folderTpl.content : _fileTpl.content, true);
 

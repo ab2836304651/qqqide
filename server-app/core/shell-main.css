@@ -1259,7 +1259,7 @@ html.aiv-contour-fail[data-theme="dark"] .aiv-block-active {
   color: #fff !important;
 }
 
-/* ★ 家目录恒红：_qqq / _qqqvault 行 常态 + hover + 子菜单打开(面包屑) 文字全部保持红色不变色 */
+/* ★ 恒红目录（_qqq / _qqqvault / _qqq/quests，规则清单唯一源 core/qqq-reddirs.js）：常态 + hover + 子菜单打开(面包屑) 文字全部保持红色不变色 */
 .aiv-dd-row.aiv-dd-home,
 .aiv-dd-row.aiv-dd-home:hover,
 .aiv-dd-row.aiv-dd-home.aiv-breadcrumb,

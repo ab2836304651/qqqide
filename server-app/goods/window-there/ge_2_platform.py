@@ -3,6 +3,7 @@
 # platform.py
 import sys
 import os
+import time
 
 # 共享翻译助手（goods/_goods_i18n.py）
 try:
@@ -101,6 +102,7 @@ if sys.platform == 'win32':
 
     # (R20) 常量移至 Windows 实现内部
     SWP_NOZORDER, SWP_NOACTIVATE = 0x0004, 0x0010
+    SW_RESTORE = 9  # 还原显示（去最大化/去最小化）
     SM_CXSCREEN, SM_CYSCREEN = 0, 1
     GA_ROOTOWNER = 3
     ERROR_ALREADY_EXISTS = 183
@@ -114,6 +116,12 @@ if sys.platform == 'win32':
     user32.GetClassNameW.argtypes = [ctypes.wintypes.HWND, ctypes.c_wchar_p, ctypes.c_int]
     user32.GetWindowRect.argtypes = [ctypes.wintypes.HWND, ctypes.POINTER(ctypes.wintypes.RECT)]
     user32.SetWindowPos.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+    user32.IsIconic.argtypes = [ctypes.wintypes.HWND]
+    user32.IsIconic.restype = ctypes.wintypes.BOOL
+    user32.IsZoomed.argtypes = [ctypes.wintypes.HWND]
+    user32.IsZoomed.restype = ctypes.wintypes.BOOL
+    user32.ShowWindow.argtypes = [ctypes.wintypes.HWND, ctypes.c_int]
+    user32.ShowWindow.restype = ctypes.wintypes.BOOL
     user32.GetSystemMetrics.argtypes = [ctypes.c_int]
     user32.GetCursorPos.argtypes = [ctypes.POINTER(POINT)]
     user32.WindowFromPoint.argtypes = [POINT]
@@ -226,10 +234,24 @@ if sys.platform == 'win32':
             try:
                 flags = SWP_NOZORDER | SWP_NOACTIVATE
                 x, y, w, h = layout_info['x'], layout_info['y'], layout_info['width'], layout_info['height']
-                if not user32.SetWindowPos(handle, None, x, y, w, h, flags):
-                    print(f"应用窗口布局失败 (HWND: {handle})。WinAPI错误")
-                else:
+                # ★ 最大化/最小化窗口必须先还原普通态：两种状态都会吞掉 SetWindowPos（窗口纹丝不动）
+                if user32.IsIconic(handle) or user32.IsZoomed(handle):
+                    user32.ShowWindow(handle, SW_RESTORE)
+                    print(f"目标窗口处于最大化/最小化状态，已先还原 (HWND: {handle})")
+                user32.SetWindowPos(handle, None, x, y, w, h, flags)
+                # 读回校验（应用自身逻辑/还原动画可能覆盖首帧移动）→ 不符按点补发（幂等）
+                rect = ctypes.wintypes.RECT()
+                user32.GetWindowRect(handle, ctypes.byref(rect))
+                for wait_s in (0.15, 0.3, 0.5):
+                    if (rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top) == (x, y, w, h):
+                        break
+                    time.sleep(wait_s)
+                    user32.SetWindowPos(handle, None, x, y, w, h, flags)
+                    user32.GetWindowRect(handle, ctypes.byref(rect))
+                if (rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top) == (x, y, w, h):
                     print(f"窗口布局已还原 (HWND: {handle})")
+                else:
+                    print(f"应用窗口布局失败 (HWND: {handle})，实际位置 ({rect.left},{rect.top} {rect.right - rect.left}x{rect.bottom - rect.top})")
             except Exception as e:
                 print(f"设置窗口位置时出错: {e}")
 
@@ -622,6 +644,53 @@ elif sys.platform == 'linux':
                     print(f"获取窗口信息时出错: {e}")
                 return None
 
+        _WM_STATE_ATOMS = ('_NET_WM_STATE_MAXIMIZED_HORZ', '_NET_WM_STATE_MAXIMIZED_VERT', '_NET_WM_STATE_FULLSCREEN')
+
+        def _clear_wm_states(self, display, window):
+            """
+            (R31) 去掉 EWMH 最大化/全屏状态——处于这两态的窗口会吞掉 configure 请求
+            （WM 恒把几何拉回原态，窗口纹丝不动）。去状态是异步的：发完 _NET_WM_STATE
+            消息后轮询窗口属性直到清空（≤1s）。返回是否真正发过移除请求。
+            """
+            try:
+                from Xlib import X
+                import Xlib.protocol.event
+
+                root = display.screen().root
+                wm_state = display.intern_atom('_NET_WM_STATE')
+                prop = window.get_full_property(wm_state, X.AnyPropertyType)
+                if not prop or prop.value is None:
+                    return False
+                present = set(int(a) for a in prop.value)
+                active = [a for a in (display.intern_atom(n) for n in self._WM_STATE_ATOMS) if a in present]
+                if not active:
+                    return False
+
+                # _NET_WM_STATE 一次最多携带两个状态原子；移除（action=0），source=1（应用）
+                for i in range(0, len(active), 2):
+                    pair = list(active[i:i + 2])
+                    pair += [0] * (2 - len(pair))
+                    ev = Xlib.protocol.event.ClientMessage(
+                        window=window, client_type=wm_state,
+                        data=(32, [0, pair[0], pair[1], 1, 0]))
+                    root.send_event(ev, event_mask=X.SubstructureRedirectMask | X.SubstructureNotifyMask)
+                display.flush()
+                print(f"目标窗口处于最大化/全屏状态，已请求还原 (handle: {window.id})")
+
+                for _ in range(20):  # ≤1s 等 WM 落实去状态
+                    time.sleep(0.05)
+                    p = window.get_full_property(wm_state, X.AnyPropertyType)
+                    if not p or p.value is None:
+                        break
+                    now = set(int(v) for v in p.value)
+                    if not any(a in now for a in active):
+                        break
+                time.sleep(0.1)  # WM 去状态收尾
+                return True
+            except Exception as e:
+                print(f"清除窗口最大化/全屏状态时出错: {e}")
+                return False
+
         def set_window_layout(self, handle, layout_info):
             """
             (R24) Linux实现：设置窗口布局
@@ -645,11 +714,20 @@ elif sys.platform == 'linux':
                 # 获取布局信息
                 x, y, width, height = layout_info['x'], layout_info['y'], layout_info['width'], layout_info['height']
 
+                # ★ 最大化/全屏窗口先清 EWMH 状态（否则 configure 会被 WM 拉回——窗口纹丝不动）
+                cleared = self._clear_wm_states(display, window)
+
                 # 配置窗口
                 window.configure(x=x, y=y, width=width, height=height, border_width=0)
 
                 # 刷新显示
                 display.sync()
+
+                # 去状态收尾可能覆盖首遍配置 → 补发一遍（幂等）
+                if cleared:
+                    time.sleep(0.1)
+                    window.configure(x=x, y=y, width=width, height=height, border_width=0)
+                    display.sync()
 
                 print(f"窗口布局已设置 (handle: {handle})")
                 return True
@@ -1189,6 +1267,45 @@ elif sys.platform == 'darwin':
             except Exception as e:
                 return self._handle_accessibility_error("获取窗口信息", e)
 
+        def _pick_target_window(self, AS, app_element, layout_info):
+            """
+            (R31) 选窗：标题精确匹配优先，其次位置最接近保存值；无候选返回 None
+            （从 set_window_layout 抽出——全屏退出后需按同规则重新定位窗口元素）
+            """
+            win_list = []
+            r = AS.AXUIElementCopyAttributeValue(app_element, "AXWindows", None)
+            if r[0] == 0 and r[1] is not None:
+                try:
+                    for i in range(len(r[1])):
+                        win_list.append(r[1][i])
+                except Exception:
+                    pass
+            if not win_list:
+                for attr in ("AXMainWindow", "AXFocusedWindow"):
+                    rr = AS.AXUIElementCopyAttributeValue(app_element, attr, None)
+                    if rr[0] == 0 and rr[1] is not None:
+                        win_list.append(rr[1])
+                        break
+            if not win_list:
+                return None
+
+            want_title = layout_info.get('title') or ""
+            if want_title:
+                for w in win_list:
+                    t, _, _, _, _ = self._read_window_geometry(w)
+                    if t == want_title:
+                        return w
+
+            tx = int(layout_info.get('x', 0))
+            ty = int(layout_info.get('y', 0))
+            best, best_d = None, None
+            for w in win_list:
+                _, x, y, _, _ = self._read_window_geometry(w)
+                d = abs(x - tx) + abs(y - ty)
+                if best_d is None or d < best_d:
+                    best, best_d = w, d
+            return best
+
         def set_window_layout(self, handle, layout_info):
             """
             (R24) macOS实现：设置窗口布局（PID 定位应用；标题精确匹配优先，其次位置就近）
@@ -1207,54 +1324,73 @@ elif sys.platform == 'darwin':
                     self._handle_accessibility_error("设置窗口布局", f"无法创建应用程序元素 (PID: {pid})")
                     return False
 
-                # 收集候选窗口
-                win_list = []
-                r = AS.AXUIElementCopyAttributeValue(app_element, "AXWindows", None)
-                if r[0] == 0 and r[1] is not None:
-                    try:
-                        for i in range(len(r[1])):
-                            win_list.append(r[1][i])
-                    except Exception:
-                        pass
-                if not win_list:
-                    for attr in ("AXMainWindow", "AXFocusedWindow"):
-                        rr = AS.AXUIElementCopyAttributeValue(app_element, attr, None)
-                        if rr[0] == 0 and rr[1] is not None:
-                            win_list.append(rr[1])
-                            break
-                if not win_list:
-                    return False
-
                 # 选窗：标题精确匹配优先，其次位置最接近保存值
-                target = None
-                want_title = layout_info.get('title') or ""
-                if want_title:
-                    for w in win_list:
-                        t, _, _, _, _ = self._read_window_geometry(w)
-                        if t == want_title:
-                            target = w
-                            break
+                target = self._pick_target_window(AS, app_element, layout_info)
                 if target is None:
-                    tx = int(layout_info.get('x', 0))
-                    ty = int(layout_info.get('y', 0))
-                    best_d = None
-                    for w in win_list:
-                        _, x, y, _, _ = self._read_window_geometry(w)
-                        d = abs(x - tx) + abs(y - ty)
-                        if best_d is None or d < best_d:
-                            target = w
-                            best_d = d
+                    return False
 
                 x = int(layout_info['x'])
                 y = int(layout_info['y'])
                 width = int(layout_info['width'])
                 height = int(layout_info['height'])
 
-                # 写位置与尺寸（必须 AXValueCreate 造值，3 参调用）
-                pos_value = AS.AXValueCreate(AS.kAXValueCGPointType, Quartz.CGPointMake(x, y))
-                pos_ret = AS.AXUIElementSetAttributeValue(target, AS.kAXPositionAttribute, pos_value)
-                size_value = AS.AXValueCreate(AS.kAXValueCGSizeType, Quartz.CGSizeMake(width, height))
-                size_ret = AS.AXUIElementSetAttributeValue(target, AS.kAXSizeAttribute, size_value)
+                # ★ 全屏/最小化窗口先退态——全屏窗口处于独立空间（位置/尺寸写入必败）、
+                #   最小化窗口拒绝写入（「3X 选卡片纹丝不动」的 mac 同源根因）
+                was_fs = False
+                try:
+                    fr = AS.AXUIElementCopyAttributeValue(target, "AXFullScreen", None)
+                    if fr[0] == 0 and fr[1] is not None and bool(fr[1]):
+                        fs_ret = AS.AXUIElementSetAttributeValue(target, "AXFullScreen", False)
+                        if fs_ret == 0:
+                            was_fs = True
+                            print("目标窗口处于全屏，正在退出全屏…")
+                            for _ in range(60):  # ≤3s 等空间切换
+                                time.sleep(0.05)
+                                rr = AS.AXUIElementCopyAttributeValue(target, "AXFullScreen", None)
+                                if rr[0] != 0 or not rr[1]:
+                                    break
+                            time.sleep(0.3)  # 空间切换收尾
+                        else:
+                            print(f"退出全屏请求被拒 (err={fs_ret})")
+                except Exception as fe:
+                    print(f"退出全屏时出错: {fe}")
+                if was_fs:
+                    # 空间切换后窗口元素可能被应用重建（旧引用失效 → 写入恒 -25202）
+                    # ——轮询等待「可读的新元素」就绪（≤4s；标题/尺寸能读出 = 引用有效）
+                    for _ in range(80):
+                        t2 = self._pick_target_window(AS, app_element, layout_info)
+                        if t2 is not None:
+                            _, _, _, _w2, _h2 = self._read_window_geometry(t2)
+                            if _w2 > 0 and _h2 > 0:
+                                target = t2
+                                break
+                        time.sleep(0.05)
+                    time.sleep(0.3)
+                try:
+                    mr = AS.AXUIElementCopyAttributeValue(target, "AXMinimized", None)
+                    if mr[0] == 0 and mr[1] is not None and bool(mr[1]):
+                        AS.AXUIElementSetAttributeValue(target, "AXMinimized", False)
+                        time.sleep(0.2)
+                except Exception as me:
+                    print(f"还原最小化窗口时出错: {me}")
+
+                # 写位置与尺寸（必须 AXValueCreate 造值，3 参调用）——退全屏动画期写入可能被拒，失败重试
+                pos_ret = size_ret = -1
+                for _ in range(8):
+                    pos_value = AS.AXValueCreate(AS.kAXValueCGPointType, Quartz.CGPointMake(x, y))
+                    pos_ret = AS.AXUIElementSetAttributeValue(target, AS.kAXPositionAttribute, pos_value)
+                    size_value = AS.AXValueCreate(AS.kAXValueCGSizeType, Quartz.CGSizeMake(width, height))
+                    size_ret = AS.AXUIElementSetAttributeValue(target, AS.kAXSizeAttribute, size_value)
+                    if pos_ret == 0 and size_ret == 0:
+                        break
+                    if was_fs:
+                        # 元素在退全屏期间被重建 → 每轮失败后重取可读候选（新引用）
+                        t3 = self._pick_target_window(AS, app_element, layout_info)
+                        if t3 is not None:
+                            _, _, _, _w3, _h3 = self._read_window_geometry(t3)
+                            if _w3 > 0 and _h3 > 0:
+                                target = t3
+                    time.sleep(0.25)
 
                 if pos_ret == 0 and size_ret == 0:
                     print(f"窗口布局已设置 (PID: {pid} -> {x},{y} {width}x{height})")

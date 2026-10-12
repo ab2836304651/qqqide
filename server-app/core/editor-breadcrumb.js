@@ -10,7 +10,10 @@
 // 2. 底端悬浮按钮行（Monaco 容器内 absolute 右下角）：md 预览 👁（仅 Markdown 文件）
 //    / undo ↶ / redo ↷ / minimap toggle
 //
-// API: window.qqqEditorBreadcrumb = { create(hostPane, filePath, monacoEditor, monaco) }
+// API: window.qqqEditorBreadcrumb = { create(hostPane, filePath, monacoEditor, monaco), createBar(hostPane, filePath), hideTipWithin(el) }
+//   create   = 编辑器整机（面包屑 + Monaco 容器 + 悬浮按钮行）
+//   createBar = 仅面包屑豆腐块（非编辑器宿主复用——md 预览顶栏；禁第二套条）
+//   hideTipWithin = 宿主销毁时收掉锚在其中的 hover 即时框（防幽灵框残留）
 // ============================================================================
 (function () {
   'use strict';
@@ -138,31 +141,17 @@
       ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
   }
 
-  // ── 主入口 ──
-  function create(hostPane, filePath, monacoEditor, monaco) {
+  // ── 面包屑豆腐块（独立入口）──
+  //   仅建条：编辑器（create）与 md 预览等非编辑器宿主共用同一实现（路径/编码/复制/Roam/时间线五件全同），禁第二套。
+  //   宿主布局（flex 列等）由调用方负责；返回条元素。
+  function createBar(hostPane, filePath) {
     // 清理旧元素
     var oldBar = hostPane.querySelector('[data-qqq-editor-breadcrumb]');
     if (oldBar) oldBar.remove();
     // hover 文字框如锚在被移除的旧按钮上 → 立即收起（防悬停中重建残留）
     if (_bcTipAnchor && !document.contains(_bcTipAnchor)) _hideBcTip();
-    var oldMc = hostPane.querySelector('[data-qqq-editor-monaco]');
-    if (oldMc) {
-      // 把 Monaco DOM 从旧容器里取回 hostPane（安全）
-      var oldMcEditor = oldMc.querySelector('.monaco-editor');
-      if (oldMcEditor && oldMcEditor.parentNode === oldMc && oldMc.parentNode === hostPane) {
-        hostPane.appendChild(oldMcEditor);
-      }
-      oldMc.remove();
-    }
-    var oldBtns = hostPane.querySelector('[data-qqq-editor-float-btns]');
-    if (oldBtns) oldBtns.remove();
 
-    // hostPane 设为 flex 列布局：面包屑在上 → Monaco 容器在下
-    hostPane.style.display = 'flex';
-    hostPane.style.flexDirection = 'column';
-    hostPane.style.overflow = 'hidden';
-
-    // ═══ 1. 面包屑豆腐块（独立占高，可选可复制，不可编辑）═══
+    // ═══ 面包屑豆腐块（独立占高，可选可复制，不可编辑）═══
     var bar = document.createElement('div');
     bar.setAttribute('data-qqq-editor-breadcrumb', '1');
 
@@ -395,6 +384,30 @@
     }
 
     hostPane.appendChild(bar);
+    return bar;
+  }
+
+  // ── 主入口（编辑器整机 = 面包屑 + Monaco 容器 + 悬浮按钮行）──
+  function create(hostPane, filePath, monacoEditor, monaco) {
+    // 清理旧元素
+    var oldMc = hostPane.querySelector('[data-qqq-editor-monaco]');
+    if (oldMc) {
+      // 把 Monaco DOM 从旧容器里取回 hostPane（安全）
+      var oldMcEditor = oldMc.querySelector('.monaco-editor');
+      if (oldMcEditor && oldMcEditor.parentNode === oldMc && oldMc.parentNode === hostPane) {
+        hostPane.appendChild(oldMcEditor);
+      }
+      oldMc.remove();
+    }
+    var oldBtns = hostPane.querySelector('[data-qqq-editor-float-btns]');
+    if (oldBtns) oldBtns.remove();
+
+    // hostPane 设为 flex 列布局：面包屑在上 → Monaco 容器在下
+    hostPane.style.display = 'flex';
+    hostPane.style.flexDirection = 'column';
+    hostPane.style.overflow = 'hidden';
+
+    createBar(hostPane, filePath);
 
     // ═══ 2. Monaco 容器（包含编辑器 + 悬浮按钮）═══
     var mc = document.createElement('div');
@@ -492,6 +505,11 @@
     mc.appendChild(btns);
   }
 
-  window.qqqEditorBreadcrumb = { create: create };
+  // 宿主销毁时收掉锚在其中的即时框（非编辑器宿主关闭路径调用——防悬停中销毁留下幽灵框）
+  function hideTipWithin(el) {
+    try { if (_bcTipAnchor && el && el.contains && el.contains(_bcTipAnchor)) _hideBcTip(); } catch (_) { }
+  }
+
+  window.qqqEditorBreadcrumb = { create: create, createBar: createBar, hideTipWithin: hideTipWithin };
 
 })();

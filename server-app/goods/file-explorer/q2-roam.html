@@ -131,7 +131,7 @@ html.rm-sash-drag .sidebar, html.rm-sash-drag .sidebar-resizer, html.rm-sash-dra
 .file-item.selected { background-color: var(--roam-sel-bg) !important; color: var(--roam-sel-text); }
 .file-item.selected .sz-area, .file-item.selected .file-select-area, .file-item.selected .folder-name-area, .file-item.selected .file-name-area { background-color: transparent !important; color: var(--roam-sel-text); }
 .file-item.selected:hover { background-color: var(--roam-sel-bg) !important; }
-.file-item.roam-home-dir .folder-name-area { color: var(--red) !important; font-weight: 700; }   /* 家目录（_qqq/_qqqvault）恒红加粗：!important 压过 selected 文字色（行选中色池恒 3 淡色不含红，红字任何状态可读） */
+.file-item.roam-home-dir .folder-name-area { color: var(--red) !important; font-weight: 700; }   /* 恒红目录（_qqq/_qqqvault/_qqq/quests，规则源 core/qqq-reddirs.js）恒红加粗：!important 压过 selected 文字色（行选中色池恒 3 淡色不含红，红字任何状态可读） */
 .sz-area { width: var(--sz-area-width); height: 100%; min-height: 17px; font-style: normal; font-size: 10px; color: var(--text-dim); text-align: right; padding: 2.5px 0 0 0; line-height: 1.2; flex-shrink: 0; white-space: pre; cursor: pointer; z-index: 10; position: relative; display: inline-block; }
 .file-select-area { display: flex; align-items: center; padding: 1.5px 3.5px 1.5px 7px; cursor: pointer; flex-shrink: 0; height: 100%; }
 .folder-name-area { flex: 1; padding: 1.5px 7px 1.5px -1.5px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 100%; }
@@ -271,6 +271,7 @@ html.rm-sash-drag .sidebar, html.rm-sash-drag .sidebar-resizer, html.rm-sash-dra
 <div id="pathTooltip" class="path-tooltip"></div>
 <script src="../../core/i18n.js"></script>
 <script src="../../core/qqq-icons.js"></script>
+<script src="../../core/qqq-reddirs.js"></script>
 <script src="q2-roam.js"></script>
 <script src="q2-roam-ui.js"></script>
 <script src="q2-roam-boot.js"></script>

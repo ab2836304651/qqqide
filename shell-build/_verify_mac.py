@@ -357,7 +357,8 @@ else:
 qmdjs = EP + 'webapp/goods/qmd/qmd.js'
 if qmdjs in nameset:
     qj = tf.extractfile(qmdjs).read().decode('utf-8', 'replace')
-    check('_isMac' in qj and 'ConPTY' in qj, 'qmd: mac skip guard present')
+    # 2026-10-05 起语义换代：非 Windows 统一跳过（_isWin），x 长按退化 kmd（旧 _isMac 二元断言过时）
+    check('_isWin' in qj and 'ConPTY' in qj, 'qmd: non-Windows skip guard present')
 else:
     check(False, 'webapp/goods/qmd/qmd.js present')
 

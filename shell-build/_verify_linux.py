@@ -230,6 +230,24 @@ check(len(pyc_bad) == 0, 'no stray __pycache__ (%d found)' % len(pyc_bad))
 foreign = [n for n in names if 'cpython-38' in n or 'cpython-310' in n]
 check(len(foreign) == 0, 'no foreign-version pyc (%d found)' % len(foreign))
 
+# ── 0.4.28 新增面：编辑器域文件关联 / 外部打开链 / tmp 机器 / window-there EWMH 还原 ──
+if _mj in nameset:
+    check('qqqide:tmp:sweep' in _mj_txt, 'shell: tmp-machine IPC wired')
+    check('qqqide:fileassoc:apply-editor' in _mj_txt, 'shell: editor file-assoc IPC wired')
+    check('qqqide-editor.desktop' in _mj_txt, 'shell: editor desktop entry id present (linux xdg)')
+    check('--qqqide-open' in _mj_txt, 'shell: external-open marker (--qqqide-open) present')
+try:
+    _ge = tf.extractfile(EP + 'webapp/goods/window-there/ge_2_platform.py').read().decode('utf-8', 'replace')
+    check('_NET_WM_STATE' in _ge and '_clear_wm_states' in _ge,
+          'window-there: EWMH maximize/fullscreen clear present (linux restore fix)')
+except Exception as e:
+    check(False, 'window-there platform readable (%s)' % e)
+try:
+    _stjs = tf.extractfile(EP + 'webapp/core/settings.js').read().decode('utf-8', 'replace')
+    check('applyEditor' in _stjs and 'qqq-fa-editor-btn' in _stjs, 'webapp: settings editor-assoc row wired')
+except Exception as e:
+    check(False, 'settings.js readable (%s)' % e)
+
 # ── factory_version（发布闸门会再比对源码版本）──
 fv = None
 try:

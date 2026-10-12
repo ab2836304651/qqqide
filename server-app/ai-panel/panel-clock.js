@@ -615,9 +615,13 @@ function closeQuestDrop() {
     _questDropPinned = false;
     var bar = document.getElementById('quest-bar');
     if (bar) bar.classList.remove('quest-expanded');
+    // ★ 筛选文本自动清空挂起结算（2026-10-11 用户定案）：到点时下拉仍开着 → 挂起；此刻关闭 = 静默清空（绝不在用户注视下突变列表）
+    if (_q2FilterClearPending) _q2FilterClearNow();
 }
 // ★ 悬浮守卫 v2（2026-09-26 F4）：双诉求并治——① 一楼问题：光标豆腐块→列表迁移途中不误关
 //   ② 离开意图：离开区域 / 离开整个面板 / 区域外点按 / 窗口失焦 → 尽快收（不无限续期）。
+//   ★ 编辑姿态例外（2026-10-11 用户定案）：筛选框持有焦点 = 一切自动收失效（光标去到哪都不收，含离开整个面板）；
+//     关闭只认显式手势——点菜单外（mousedown 捕捉/窗口失焦兜底）瞬间收 + Esc/选条目/加号照常。
 //   实探 = 纯几何（豆腐块矩形 ∪ 下拉矩形 ∪ 生长走廊），替掉 elementFromPoint 陈旧坐标
 //   （旧法指针离面板后坐标冻结在边缘，恒判「在区域内」→ 无限续期，表现为「半天不隐藏」）。
 var _q2LastMX = -1, _q2LastMY = -1;
@@ -662,16 +666,51 @@ function _q2PointerInsideZone() {
     } catch (_) { }
     return false;
 }
-var _q2SearchLastAct = 0;    // ★ 搜索框最近活动（focus/input）——打字保护限时 6s，防永久续期
+var _q2SearchBlurAt = 0;     // ★ 编辑姿态收尾戳（2026-10-11）：筛选框失焦时刻——跨帧点击时窗口失焦与元素失焦顺序不定，400ms 收尾窗兜底
+// ★ 编辑姿态判定（2026-10-11 用户定案）：筛选框持有焦点（或刚失焦 400ms 内）——点菜单外/窗口失焦的处理按「编辑中」走（钉住豁免失效）
+function _q2SearchEditing() { return _questSearchFocused || (Date.now() - _q2SearchBlurAt) < 400; }
+// ★ 筛选文本自动清空（2026-10-11 用户定案）：筛选后选中条目 → 起 60s 表；期间未回到筛选框（未获焦点）
+//   → 判「用户找到了要召回的条目」自动清空（允许点错后继续扫——不清得早，也不永远赖着）。
+//   回到筛选框（focus）= 撤销；点错再选一条 = 重新起表；到点时下拉开着 → 挂起（绝不在用户注视下突变列表），
+//   关闭时由 closeQuestDrop 静默结算。
+var Q2_FILTER_AUTOCLEAR_MS = 60000;        // 判定窗（一分钟）
+var _q2FilterClearTimer = null;            // 60s 表句柄
+var _q2FilterClearPending = false;         // 到期但下拉开着 → 挂起标记（closeQuestDrop 结算；focus 撤销）
+function _q2FilterClearNow() {
+    _q2FilterClearPending = false;
+    if (!_questSearchText) return;
+    _questSearchText = '';
+    if (_questDrop) {
+        var inp = _questDrop.querySelector('.quest-drop-search');
+        if (inp) inp.value = '';
+        renderQuestDrop();
+    }
+}
+function _q2CancelFilterClear() {
+    clearTimeout(_q2FilterClearTimer);
+    _q2FilterClearTimer = null;
+    _q2FilterClearPending = false;
+}
+function _q2ArmFilterClear() {
+    _q2CancelFilterClear();
+    if (!_questSearchText) return;   // 未用筛选（文本空）→ 无可清
+    _q2FilterClearTimer = setTimeout(function () {
+        _q2FilterClearTimer = null;
+        if (!_questSearchText) return;
+        if (_questSearchFocused) return;                             // 编辑姿态（focus 撤销已覆盖，双保险）
+        if (_questDrop) { _q2FilterClearPending = true; return; }    // 下拉仍开着 → 挂起到关闭时静默清
+        _q2FilterClearNow();
+    }, Q2_FILTER_AUTOCLEAR_MS);
+}
 function _q2ArmClose() {
     if (_questDropPinned) return;                       // ★ 钉住态：永不进入自动关闭倒计时
     clearTimeout(_questDropTimer);
     _questDropTimer = setTimeout(function tick() {
         if (!_questDrop) return;                        // 已关闭（点击/切换）→ 停止续期
         if (_questDropPinned) return;                   // ★ 钉住态兜底：ticking 中也不关
-        if (_questSearchFocused && (Date.now() - _q2SearchLastAct) < 6000) {
-            _questDropTimer = setTimeout(tick, 200);    // ★ 打字保护优先于指针位置：正往搜索框打字（6s 内聚焦/键入）→ 指针停在哪都不收——
-            return;                                     //   防「输入框中途被移除 → 焦点落回 body → 后续按键漏给面板快捷键」的整链事故
+        if (_questSearchFocused) {
+            _questDropTimer = setTimeout(tick, 200);    // ★ 编辑姿态优先于指针位置（2026-10-11）：筛选框持有焦点 = 永不自动收（指针停在哪都不收，含离开整个面板）——
+            return;                                     //   关闭仅认显式手势：点菜单外（瞬间收）/ Esc / 选条目 / 加号；防「输入框中途被移除 → 焦点落回 body → 按键漏给面板」的整链事故
         }
         if (_q2PtrOutDoc) { closeQuestDrop(); return; } // ★ 指针在面板外 → 立即收，不续期
         if (_q2PointerInsideZone()) {                   // 指针仍在区域/走廊（迁移 / 列表生长）→ 续期
@@ -759,7 +798,13 @@ async function renderQuestDrop() {
             line.appendChild(prefix);
             line.appendChild(title);
             item.appendChild(line);
-            item.onclick = function (e) { e.stopPropagation(); closeQuestDrop(); switchQuest(s.id); };
+            item.onclick = function (e) {
+                e.stopPropagation();
+                _q2CancelFilterClear();   // ★ 选中 = 仍在筛选流：先撤销上一轮待清空（防 closeQuestDrop 结算掉），选定后重新起表
+                closeQuestDrop();
+                switchQuest(s.id);
+                _q2ArmFilterClear();      // ★ 筛选后选中起表（2026-10-11 用户定案）：60s 未回筛选框 → 判「找到了」自动清空
+            };
             body.appendChild(item);
             // ★ 彗星电子钟：必须在 body.appendChild 之后插入，确保时钟在 document 中。
             //    否则 _tickCometClocks 在 _ensureCometClockTicking 的首次 tick 中 querySelectorAll 找不到。
@@ -824,23 +869,22 @@ async function openQuestDrop() {
     search.value = _questSearchText;
     search.oninput = function () {
         _questSearchText = search.value;
-        _q2SearchLastAct = Date.now();   // ★ 打字保护刷新
+        if (!_questSearchText) _q2CancelFilterClear();   // 已手动清空 → 撤销待清任务（空文本无可清）
         renderQuestDrop();
     };
-    // ★ 搜索框获得焦点 → 阻止鼠标移出自动关闭
+    // ★ 搜索框获得焦点 = 编辑姿态（2026-10-11 用户定案）：光标移出下拉/离开整个面板都不自动收；
+    //   关闭仅认显式手势——点菜单外（瞬间）/ Esc / 选条目 / 加号
     search.addEventListener('focus', function () {
         _questSearchFocused = true;
-        _q2SearchLastAct = Date.now();   // ★ 打字保护起算
-    });
-    search.addEventListener('keydown', function () {
-        _q2SearchLastAct = Date.now();   // ★ 任何按键 = 打字活着（无输入变化的按键也计入，供关闭倒计时打字保护续期）
+        _q2CancelFilterClear();   // ★ 回到筛选框（2026-10-11 用户定案）：撤销待清空——用户仍在扫，筛选文本保留
     });
     search.addEventListener('blur', function () {
         _questSearchFocused = false;
-        // 延迟关闭：允许 click 先落到下拉列表项上（钉住态禁关——失焦不再构成关闭理由）
+        _q2SearchBlurAt = Date.now();   // ★ 编辑姿态收尾戳（跨帧点击时窗口失焦与元素失焦顺序不定，400ms 收尾窗兜底）
+        // ★ 失焦不再直接关（2026-10-11）：交还指针裁决——指针仍在区域内则保持（点菜单内空白不误关），指针在外由倒计时尽快收
         setTimeout(function () {
             if (!_questSearchFocused && _questDrop && !_questDropPinned) {
-                closeQuestDrop();
+                _q2ArmClose();
             }
         }, 150);
     });
@@ -1200,8 +1244,8 @@ function _q2ShowPinHint() {
         // ★ 点击钉住（2026-09-26）：单击豆腐块区（改名笔/内联编辑框/下拉体除外）= 打开并钉住——
         //   钉住后一切自动关闭失效（mouseleave 倒计时/搜索框失焦/异步同步事件）；
         //   收起只认显式手势：本区再点 / 选条目 / 点加号 / Esc。
-        //   ★ 钉住态点区域外不收（2026-09-26 用户定案）——留白可截图/长时间浏览；
-        //     悬停态点区域外立即收（见文件底部 mousedown 捕捉处理器）。
+         // ★ 钉住态点区域外不收（2026-09-26 用户定案）——留白可截图/长时间浏览；
+        //     悬停态点区域外立即收（见文件底部 mousedown 捕捉处理器）；筛选框编辑姿态例外（2026-10-11）——点区域外瞬间收。
         //   ★ 改名流程例外（2026-09-28 / 2026-09-30）：笔区不参与钉住开关——点笔 = 纯改名零干扰
         //     （幽灵 click 整击忽略：不钉住/不重开/不弹提示）；改名在途时钉住豁免失效——
         //     改名完成（回车/点区域外）立即收（唯一除外：mousedown 落点在下拉内部）。
@@ -1254,13 +1298,14 @@ function _q2ShowPinHint() {
 //   根治「外面单击了外面区域，下拉还不隐藏」（旧 click 关闭被「搜索框焦点」早退吞掉）；
 //   区域 = #quest-bar 整棵（豆腐块+下拉+流光层）；钉住态不适用（2026-09-26 用户定案：留白可截图）。
 //   ★ 改名在途例外（2026-09-28）：改名笔触发的内联编辑激活时钉住豁免失效——改名完成即收（用户定案）。
+//   ★ 编辑姿态例外（2026-10-11）：筛选框编辑中（含失焦 400ms 收尾窗）钉住豁免同样失效——点菜单外瞬间收（用户定案）。
 document.addEventListener('mousedown', function (e) {
     if (!_questDrop) return;
     var bar = document.getElementById('quest-bar');
     if (bar && e.target && bar.contains(e.target)) return;
     // ★ 改名在途例外（2026-09-28）：内联编辑激活时钉住豁免失效——改名流程不适用上一楼的钉住规则，
     //   点区域外 = 改名完成信号 → 立即收（blur 提交收尾由 _tofuCommitEdit 兜底）。
-    if (_questDropPinned && !_q2EditActive()) return;
+    if (_questDropPinned && !_q2EditActive() && !_q2SearchEditing()) return;
     closeQuestDrop();
 }, true);
 
@@ -1268,9 +1313,10 @@ document.addEventListener('mousedown', function (e) {
 document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && _questDrop) closeQuestDrop();
 });
-// ★ 窗口失焦（alt-tab / 切外部应用）= 离开意图：悬停态立即收（钉住态不收）
+// ★ 窗口失焦（alt-tab / 切外部应用 / 点进其他帧）= 离开意图：悬停态立即收（钉住态不收；
+//   筛选框编辑姿态例外——跨帧点击收不到本帧 mousedown，这里兜底「点菜单外=瞬间收」）
 window.addEventListener('blur', function () {
-    if (_questDrop && !_questDropPinned) closeQuestDrop();
+    if (_questDrop && (!_questDropPinned || _q2SearchEditing())) closeQuestDrop();
 });
 
 async function renderTabs() { await updateQuestTofu(); }

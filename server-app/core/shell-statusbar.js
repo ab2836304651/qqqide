@@ -602,11 +602,12 @@
   // 版本号+通知点永驻（通知中心永远可达）；时钟/缩放徽章天然豁免；再窄 = 应用物理下限（兜底裁切）。
   // ★ 性能（q397 审计）：旧实现每次触发「全移除→逐级重加」= 5~9 次强制回流，且被时钟/vibe
   //   每秒文本 tick 打一次；v2 增量重算——稳态只做 1 次实测零 DOM 写；释放试放由「受阻水位」
-  //   门控（余量增长 >4px 才再试），文本 tick 不再产生 class 抖动。诊断 = window.qqqStatusFit.stats()
+  //   门控（水位 = 行可用宽 clientWidth：窗口/缩放变宽 >4px 才再试），文本 tick 不再产生 class 抖动。
+  //   诊断 = window.qqqStatusFit.stats()
   var $statusArea = document.querySelector('.qqq-status-area');
   var STATUS_DENSE_LEVELS = ['qqq-dense-1', 'qqq-dense-2', 'qqq-dense-3', 'qqq-dense-4', 'qqq-dense-5', 'qqq-dense-6', 'qqq-dense-7', 'qqq-dense-8'];
   var _sdLvl = 0;           // 当前密度级（增量重算锚）
-  var _sdBlockSlack = -1;   // 释放受阻水位（上次试放失败时的余量；-1 = 无阻碍）
+  var _sdBlockAvail = -1;   // 释放受阻水位（上次试放失败/收纳完成时的行可用宽；-1 = 无阻碍）
   var _sdRaf = null;
   function _sdRow() { return $statusArea ? $statusArea.querySelector('.qqq-status-row') : null; }
   function _statusRowFits() {
@@ -620,11 +621,12 @@
     }
     return maxRight <= lim + 0.5;
   }
-  function _sdSlack() {
+  // ★ 释放水位口径 = 行可用宽（clientWidth）——随窗口/缩放变宽单调增长，与密度级无关。
+  //   禁改回 clientWidth − scrollWidth：scrollWidth 恒 ≥ clientWidth ⇒ 差值恒 ≤0 被钳成 0
+  //   →「水位未涨」永真 ⇒ 释放永不发生（窗口拉回也还原不了的实锤根因，2026-10-11）。
+  function _sdAvail() {
     var row = _sdRow();
-    if (!row) return 0;
-    var s = row.clientWidth - row.scrollWidth; // 整数口径，仅作释放门控
-    return s > 0 ? s : 0;
+    return row ? row.clientWidth : 0;
   }
   function _sdApply() {
     if (!$statusArea) return;
@@ -637,19 +639,19 @@
     var fits = _statusRowFits();
     if (fits) {
       if (_sdLvl === 0) return; // 稳态：仅 1 次实测，零 DOM 写
-      var sl = _sdSlack();
-      if (_sdBlockSlack >= 0 && sl <= _sdBlockSlack + 4) return; // 余量未涨 → 不试放（防抖）
+      var av = _sdAvail();
+      if (_sdBlockAvail >= 0 && av <= _sdBlockAvail + 4) return; // 可用宽未涨 → 不试放（防抖）
       while (_sdLvl > 0) {
         _sdLvl--; _sdApply();
-        if (!_statusRowFits()) { _sdLvl++; _sdApply(); _sdBlockSlack = _sdSlack(); return; }
+        if (!_statusRowFits()) { _sdLvl++; _sdApply(); _sdBlockAvail = _sdAvail(); return; }
       }
-      _sdBlockSlack = -1; // 全释放
+      _sdBlockAvail = -1; // 全释放
     } else {
       while (_sdLvl < STATUS_DENSE_LEVELS.length) {
         _sdLvl++; _sdApply();
         if (_statusRowFits()) break;
       }
-      _sdBlockSlack = _sdSlack(); // 刚装下 → 试放必失败，先钉水位（防下次 tick 空试放）
+      _sdBlockAvail = _sdAvail(); // 刚装下 → 试放必失败，先钉水位（防下次 tick 空试放）
     }
   }
   function _scheduleStatusDensity() {
@@ -659,7 +661,9 @@
   window.addEventListener('resize', _scheduleStatusDensity);
   updateStatusDensity();
   // 文本动态变化（i18n 切换 / 活动名换字 / 版本号到位）后重算 —— 防首次判定后长译挤出裁切
-  window.addEventListener('qqq-lang-change', function () { setTimeout(updateStatusDensity, 60); });
+  // ★ 语言切换 = 显式内容变更：解除水位再算 —— 切到短译时同宽也能还原可容纳的层级
+  //   （行宽与内容无关，短译腾出的空间不动 clientWidth；不解除则须等窗口再变宽才试放）
+  window.addEventListener('qqq-lang-change', function () { _sdBlockAvail = -1; setTimeout(updateStatusDensity, 60); });
   (function () {
     var row = _sdRow();
     if (!row || typeof MutationObserver === 'undefined') return;
@@ -672,7 +676,7 @@
   try {
     window.qqqStatusFit = {
       refresh: _scheduleStatusDensity,
-      stats: function () { return { lvl: _sdLvl, blockSlack: _sdBlockSlack, fits: _statusRowFits() }; }
+      stats: function () { return { lvl: _sdLvl, water: _sdBlockAvail, avail: _sdAvail(), fits: _statusRowFits() }; }
     };
   } catch (e) { }
   // ═══ 窄窗口退避（实测级联 v2）END ═══

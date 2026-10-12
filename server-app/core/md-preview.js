@@ -19,6 +19,9 @@
 // 渲染承载 = goods/mdview/mdview.html（iframe 隔离；主题走 qqqide-theme-change 标准协议；
 //   表格 View/图片点击 → qqqide-overlay 消息 → 主窗口 shell-overlay 悬浮预览层，零新协议）。
 //
+// 顶栏恒挂面包屑（与编辑器面包屑同源零第二套：唯一渲染源 = editor-breadcrumb.createBar——路径/编码/复制/Roam/时间线五件全同，
+//   点击语义全按源文件路径裁决；非编辑器宿主禁自造第二套条）。布局 = pane 内 absolute 弹性列：面包屑在上（自然高）→ iframe 占满余下。
+//
 // 打开入口：① 手动——编辑器右下角悬浮 👁（editor-breadcrumb.js）/ 键盘 Ctrl+K V（Monaco action，不进菜单）
 //   ② 自动（设置 mdview.auto，出厂默认开）——任何成功「打开文件」请求命中 .md → 确保其预览存在
 // 契约：同文件单预览（重复触发 = 激活已有 tab）；tab 关闭 → 全量清理（listener/定时器/pending）。
@@ -194,6 +197,12 @@
         if (view.timer) { clearTimeout(view.timer); view.timer = null; }
         _dropListeners(view);
         view.model = null;
+        // 面包屑 hover 即时框收尾（销毁时若框锚在本面板内 → 收回，防幽灵框悬浮）
+        try {
+            if (window.qqqEditorBreadcrumb && window.qqqEditorBreadcrumb.hideTipWithin && view.pane) {
+                window.qqqEditorBreadcrumb.hideTipWithin(view.pane);
+            }
+        } catch (_) { }
         if (_views[view.norm] === view) delete _views[view.norm];
     }
 
@@ -211,11 +220,24 @@
         _views[norm] = view;
 
         pane.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;background:var(--background-color);';
+        // ★ 面包屑顶栏（与编辑器同源）：编码弹层/复制路径/Roam 定位/版本时间线均按源文件路径生效
+        var wrap = document.createElement('div');
+        wrap.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;background:var(--background-color);';
+        try {
+            if (window.qqqEditorBreadcrumb && window.qqqEditorBreadcrumb.createBar) {
+                window.qqqEditorBreadcrumb.createBar(wrap, filePath);
+            }
+        } catch (_) { }
+        var holder = document.createElement('div');
+        holder.style.cssText = 'position:relative;flex:1 1 auto;min-height:0;overflow:hidden;';
         var iframe = document.createElement('iframe');
         iframe.src = _IFRAME_SRC;
-        iframe.style.cssText = 'width:100%;height:100%;border:none;display:block;background:var(--background-color);';
+        iframe.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:none;display:block;background:var(--background-color);';
         iframe.setAttribute('frameborder', '0');
-        pane.appendChild(iframe);
+        holder.appendChild(iframe);
+        wrap.appendChild(holder);
+        pane.appendChild(wrap);
+        view.wrap = wrap;
         view.iframe = iframe;
 
         if (tab) {
