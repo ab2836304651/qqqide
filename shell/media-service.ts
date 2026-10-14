@@ -141,10 +141,11 @@ function _parseFmp4Codec(init: Buffer): { video?: string; audio?: string } {
 export interface MediaResult {
     ok: boolean;
     path?: string;
-    width?: number;
+    width?: number;         // ★ 显示尺寸（已按旋转角换轴）——目标框/缩放% 一律按显示口径算
     height?: number;
     duration?: number;      // seconds
     codec?: string;
+    rotation?: number;      // 显示旋转角（度）；0/缺省 = 无旋转
     cached?: boolean;
     error?: string;
     stderr?: string;
@@ -1206,7 +1207,8 @@ export class MediaService {
         // 缓存键 = stat 指纹（零内容读取）
         const st = await this._srcStat(src);
         if (!st) { return { ok: false, error: 'src_missing' }; }
-        const cacheKey = `probe2:${st.sig}`;
+        // ★ 键版本 3（2026-10-14）：结果口径由「码流尺寸」改「显示尺寸」——旧缓存必须作废
+        const cacheKey = `probe3:${st.sig}`;
         const cached = await this.cache.get(cacheKey) as MediaResult | null;
         if (cached) { return { ...cached, cached: true }; }
 
@@ -1219,11 +1221,32 @@ export class MediaService {
         try { return await job; } finally { this._inflight.delete(ik); }
     }
 
+    /** 显示旋转角（度）：display matrix 优先，其次 rotate 标签（老 Android/iOS 写法）；无 = 0 */
+    private static _rotationOf(stream: any): number {
+        try {
+            const sdl = stream && stream.side_data_list;
+            if (Array.isArray(sdl)) {
+                for (const sd of sdl) { if (sd && sd.rotation != null) { return Number(sd.rotation) || 0; } }
+            }
+            const tag = stream && stream.tags && stream.tags.rotate;
+            if (tag != null) { return Number(tag) || 0; }
+        } catch { /* ignore */ }
+        return 0;
+    }
+
+    /** ±90/±270 → 显示宽高与码流宽高互换（180 只翻转不换轴） */
+    private static _swapDims(deg: number): boolean {
+        return Math.round(Math.abs(deg) / 90) % 2 === 1;
+    }
+
     private async _probeInner(src: string, cacheKey: string): Promise<MediaResult> {
         if (this._ffprobePath) {
             const args = [
                 '-v', 'error',
-                '-show_entries', 'stream=width,height,codec_name,duration:format=duration',
+                // ★ 显示旋转（2026-10-14）：手机竖拍视频常以横码流 + Display Matrix 存储——
+                //   不读它 → width/height 报码流尺寸 → 相框目标框按横算（竖画面被铺成横 = 拉扯）
+                '-show_entries',
+                'stream=width,height,codec_name,codec_type,duration:stream_side_data=rotation:stream_tags=rotate:stream_disposition=attached_pic:format=duration',
                 '-of', 'json',
                 src,
             ];
@@ -1233,12 +1256,21 @@ export class MediaService {
             if (r.exitCode === 0 && r.stdout) {
                 try {
                     const j = JSON.parse(r.stdout);
-                    const stream = (j.streams || [])[0] || {};
+                    const streams: any[] = Array.isArray(j.streams) ? j.streams : [];
+                    // 视频流优先（音频流排在前 / 封面图流要剔除——attached_pic 非真视频轨）
+                    const vStream = streams.find((s) => s && s.codec_type === 'video' && s.width && s.height &&
+                        !(s.disposition && s.disposition.attached_pic));
+                    const stream: any = (streams[0] && streams[0].width && streams[0].height ? streams[0] : vStream) || streams[0] || {};
                     const duration = Number(stream.duration || (j.format && j.format.duration) || 0);
+                    const rotation = MediaService._rotationOf(stream);
+                    const swap = MediaService._swapDims(rotation);
+                    const w = Number(stream.width) || undefined;
+                    const h = Number(stream.height) || undefined;
                     const out: MediaResult = {
                         ok: true,
-                        width: Number(stream.width) || undefined,
-                        height: Number(stream.height) || undefined,
+                        width: swap ? h : w,
+                        height: swap ? w : h,
+                        rotation: rotation || undefined,
                         codec: stream.codec_name || undefined,
                         duration: isFinite(duration) ? duration : undefined,
                     };
@@ -1262,6 +1294,13 @@ export class MediaService {
             if (m2) {
                 out.codec = m2[1].trim();
                 out.width = Number(m2[2]); out.height = Number(m2[3]);
+            }
+            // 显示旋转（stderr 原文："rotate : 90" / "displaymatrix: rotation of -90.00 degrees"）
+            const mr = txt.match(/rotation of (-?\d+(?:\.\d+)?) degrees/);
+            const rot = mr ? (Number(mr[1]) || 0) : 0;
+            if (rot && MediaService._swapDims(rot) && out.width && out.height) {
+                const w0 = out.width; out.width = out.height; out.height = w0;
+                out.rotation = rot;
             }
             if (out.duration || out.width) {
                 await this.cache.put(cacheKey, out, { ttlMs: 30 * 24 * 3600_000 });
@@ -1360,6 +1399,37 @@ export class MediaService {
             if (n < 12) { return false; }
             return b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP';
         } catch { return false; }
+    }
+
+    /** WebP 画布真实尺寸（VP8X 画布 / VP8 帧头 / VP8L 位流头）——预览产物真值。
+     *  ★ 2026-10-14：产物尺寸由 ffmpeg 定（带显示旋转时宽高与码流互换），返回"算出来的框"
+     *  会让渲染层按错的宽高比铺图 = 拉扯（竖拍视频相框横拉实锤）。ffprobe 读动画 webp 恒 0x0，
+     *  故只认头部字节。 */
+    private static _webpSize(p: string): { w: number; h: number } | null {
+        try {
+            const fd = fs.openSync(p, 'r');
+            const buf = Buffer.alloc(32);
+            const n = fs.readSync(fd, buf, 0, 32, 0);
+            fs.closeSync(fd);
+            if (n < 30) { return null; }
+            if (buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WEBP') { return null; }
+            const id = buf.toString('ascii', 12, 16);
+            let w = 0, h = 0;
+            if (id === 'VP8X') {
+                w = 1 + (buf[24] | (buf[25] << 8) | (buf[26] << 16));
+                h = 1 + (buf[27] | (buf[28] << 8) | (buf[29] << 16));
+            } else if (id === 'VP8 ') {
+                // 帧头：3 字节 frame tag + 3 字节同步码 9d 01 2a → 宽高从 26 起（各 14 bit）
+                w = (buf[26] | (buf[27] << 8)) & 0x3fff;
+                h = (buf[28] | (buf[29] << 8)) & 0x3fff;
+            } else if (id === 'VP8L') {
+                if (buf[20] !== 0x2F) { return null; }
+                const bits = buf[21] | (buf[22] << 8) | (buf[23] << 16) | ((buf[24] << 24) >>> 0);
+                w = 1 + (bits & 0x3fff);
+                h = 1 + ((bits >> 14) & 0x3fff);
+            } else { return null; }
+            return (w > 0 && h > 0) ? { w, h } : null;
+        } catch { return null; }
     }
 
     /** WebP 动画时长（老 q1.js getWebPDurationFromBuffer 移植：ANMF 帧时长求和） */
@@ -1465,7 +1535,8 @@ export class MediaService {
         const dst = this.cache.bucketPath(cacheKey, '.webp');
         if (fs.existsSync(dst)) {
             const h = await this._onHit(cacheKey, dst);
-            return { ok: true, kind: 'webp', path: dst, width: tw, height: th, duration: h.dur, animated: h.dur > 0, cached: true, sourceDuration: meta.duration };
+            const sz = MediaService._webpSize(dst) || { w: tw, h: th };
+            return { ok: true, kind: 'webp', path: dst, width: sz.w, height: sz.h, duration: h.dur, animated: h.dur > 0, cached: true, sourceDuration: meta.duration };
         }
         // broken 熔断：已知坏文件 TTL 内直接失败（防每轮重扫白等十几秒）
         if (await this._brokenHit(st)) {
@@ -1565,7 +1636,8 @@ export class MediaService {
         await this._ensureSpace(size2);
         await this._touch(cacheKey, dst, size2, dur2);
         await this._brokenClear(st.sig);
-        return { ok: true, kind: 'webp', path: dst, width: tw, height: th, duration: dur2, animated: dur2 > 0, cached: false, sourceDuration: meta.duration };
+        const realSz = MediaService._webpSize(dst) || { w: tw, h: th };
+        return { ok: true, kind: 'webp', path: dst, width: realSz.w, height: realSz.h, duration: dur2, animated: dur2 > 0, cached: false, sourceDuration: meta.duration };
     }
 
     // =========================================================================

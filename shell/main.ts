@@ -25,7 +25,11 @@ import { applyPortablePaths, getAppRoot } from './portable-paths';
 // ★ 播放器宿主域（--qqqide-play）：独立 userData（Data/player-host）→ 独立 SingletonLock，
 //   与 IDE 域互不夺锁（双击媒体/IDE 转发均可直启；详 shell/player-host.ts）
 const _playHostMode = process.argv.some((a: string) => a === '--qqqide-play' || a.indexOf('--qqqide-play=') === 0);
-const portable = applyPortablePaths(_playHostMode ? { sessionDir: 'player-host' } : undefined);
+// ★ 受控浏览器域（--qqqide-browser）：独立 userData（Data/browser-host）→ 独立 SingletonLock——
+//   单例受控浏览器（CDP 调试口 + 登录态持久；详 shell/browser-host.ts）。三域同一二进制、互不夺锁。
+const _browserHostMode = process.argv.some((a: string) => a === '--qqqide-browser' || a.indexOf('--qqqide-browser=') === 0);
+//   受控浏览器域额外禁用 CalculateNativeWinOcclusion（遮挡判定误报会停渲染帧——截图依赖帧）
+const portable = applyPortablePaths(_playHostMode ? { sessionDir: 'player-host' } : (_browserHostMode ? { sessionDir: 'browser-host', extraDisableFeatures: 'CalculateNativeWinOcclusion' } : undefined));
 
 // ★ 外部打开入口（--qqqide-open，2026-10-07 文件关联）：双击文本/代码文件 → 编辑器域。
 //   解析唯一实现 = player-host.parseMarkerFiles（禁用第二套 argv 解析）。
@@ -52,6 +56,7 @@ import { registerMiscIpc } from './ipc-misc';
 import { registerMediaIpc } from './ipc-media';
 import { registerPlayerIpc, kickPlayerHostForRestore, noteHostAllWindowsClosed } from './ipc-player';
 import { parsePlayFiles, parseMarkerFiles, ingestExternalFiles, injectHostRuntimePath, registerHostShellIpc, startIdeKeepalive, filesToItems, queuePlayerRequest, ensureIdeInstance, spawnIdeOpen, startIdeRevealWatch } from './player-host';
+import { browserHostPreReady, browserHostRun, browserHostReportFailure, browserHostSecondInstance } from './browser-host';
 import { registerFileAssocIpc } from './ipc-fileassoc';
 import { registerEditorFileAssocIpc, startEditorAssocHeal, classifyExternalFiles } from './fa-editor';
 import { routeExternalOpen } from './fa-open';
@@ -148,7 +153,14 @@ const _listenSnapshot = (): string => {
     } catch { return ''; }
 };
 let _cdpPort = '8315';
-if (_playHostMode) {
+if (_browserHostMode) {
+    // ★ 受控浏览器域：独立调试口段（8335 起探首个空闲）——IDE 的 8315 段、宿主的 8316 段互不争
+    const _ns = _listenSnapshot();
+    for (let _p = 8335; _p <= 8345; _p++) {
+        if (!new RegExp(':' + _p + '(\\s|$)').test(_ns)) { _cdpPort = String(_p); break; }
+    }
+    browserHostPreReady();
+} else if (_playHostMode) {
     // ★ 播放器宿主域（2026-10-02）：8315 恒保留给 IDE（_setupCdpConsoleCapture 依赖）——宿主从 8316 起探首个空闲口。
     //   旧行为：宿主打包版也钉 8315 → 与在跑 IDE 冲突 → devtools 恒启动失败（bind 报错刷屏、宿主全盲）。
     const _ns = _listenSnapshot();
@@ -171,8 +183,8 @@ app.commandLine.appendSwitch('remote-debugging-port', _cdpPort);
 // prod 打包后 qqqide.exe 自带 app path，不需要
 // ★ 播放器宿主域跳过（2026-10-02 v17 补）：协议关联 = IDE/登录域职责——宿主无 authBrain（open-url/second-instance
 //   在宿主域零登录处理）；且 dev 宿主会把 qqqide:// 关联重写为 dev electron.exe → 跨包污染绿色包用户的登录回调。
-if (_playHostMode) {
-    console.log('[protocol] player-host: skip setAsDefaultProtocolClient (login-domain only)');
+if (_playHostMode || _browserHostMode) {
+    console.log('[protocol] host domain: skip setAsDefaultProtocolClient (login-domain only)');
 } else if (app.isPackaged) {
     const ok = app.setAsDefaultProtocolClient('qqqide');
     console.log('[protocol] setAsDefaultProtocolClient (packaged) → ' + (ok ? 'OK' : 'FAILED'));
@@ -187,6 +199,21 @@ const gotTheLock = app.requestSingleInstanceLock();
 let _shouldQuitEarly = false;
 if (!gotTheLock) {
     _shouldQuitEarly = true;
+    // ★ macOS 真机实锤：锁败者实例的 ready 永不触发（Win/Linux 会触发）——whenReady 里的
+    //   退出路径在 mac 上全是死代码 → 僵尸进程常驻（占 ~200MB + 吃掉一个 CDP 端口，实测复现）。
+    //   argv 转交已在 requestSingleInstanceLock 内同步完成（持锁实例已收妥）→ 就地退出是安全的。
+    //   更新自检助手（--update-probe）同样到不了 whenReady → 就地落「ok busy」结果（与旧语义一致）。
+    //   运行期其余路径不变（Windows/Linux 继续走 whenReady 退出；--smoke 保留原语义）。
+    if (process.platform === 'darwin' && !process.argv.includes('--smoke')) {
+        try {
+            const _pi = process.argv.indexOf('--update-probe');
+            if (_pi > 0) {
+                const _out = process.argv[_pi + 1] || '';
+                if (_out) { fs.writeFileSync(_out, 'ok busy ' + APP_VERSION, 'utf8'); }
+            }
+        } catch { /* ignore */ }
+        try { app.exit(0); } catch { try { process.exit(0); } catch { /* ignore */ } }
+    }
 }
 
 // ── 自签名证书信任（自建 Nginx 用自签 SSL，必须放行） ──
@@ -210,6 +237,11 @@ app.on('certificate-error', (event, _webContents, _url, _error, certificate, cal
 
 // ── 自定义协议 qqqide:// — 外部浏览器登录回调（2026-07-31 T6 主通道） ──
 app.on('second-instance', (_event, argv) => {
+    // ★ 受控浏览器域：第二实例 = 又一次「打开受控浏览器」请求（复用同域实例；可携带 --url/--report）
+    if (_browserHostMode) {
+        try { browserHostSecondInstance((argv || []) as string[]); } catch { /* ignore */ }
+        return;
+    }
     // ★ 播放器宿主域：第二实例 = 又一次「用 qd 播放」请求（双击/关联多选）→ 收文件开新窗；
     //   其余第二实例语义（登录回调/拾回焦点）只在 IDE 域处理。
     if (_playHostMode) {
@@ -239,7 +271,7 @@ app.on('second-instance', (_event, argv) => {
 
 app.on('open-url', (event, url) => {
     event.preventDefault();
-    if (_playHostMode) { return; }   // 宿主域无登录/无 authBrain——qqqide:// 回调只归 IDE 域
+    if (_playHostMode || _browserHostMode) { return; }   // 宿主域无登录/无 authBrain——qqqide:// 回调只归 IDE 域
     console.log('[protocol] open-url fired, url=' + url);
     handleLegacyAuthProtocolUrl(url);
 });
@@ -310,6 +342,7 @@ if (process.platform === 'darwin') {
     app.on('open-file', (event, p) => {
         try { event.preventDefault(); } catch { /* ignore */ }
         if (!p || typeof p !== 'string') { return; }
+        if (_browserHostMode) { return; }   // 受控浏览器域不参与文件打开链
         const early = _macDocFiles.length === 0 && (Date.now() - _macModT0) < 1500;
         if (early) { _macDocEarly = true; }
         _macDocLog('recv +' + (Date.now() - _macModT0) + 'ms ' + p);
@@ -362,7 +395,7 @@ const audioEngine = new AudioEngine(portable.root);
 // ★ 退出兜底: 最后一个窗口不一定是第一个窗口(mainWindow closed 路径可能永不触发)
 //   before-quit 统一兜底停音频引擎 — 幂等(已停则 no-op), 覆盖全部退出路径
 //   + mac 更新「退出即换」(v1): 就绪暂存存在时静默换装（助手等本进程退出后作业）
-app.on('before-quit', () => { try { audioEngine.stop(); } catch { /* ignore */ } try { maybeAutoApplyOnQuit(); } catch { /* ignore */ } });
+app.on('before-quit', () => { try { audioEngine.stop(); } catch { /* ignore */ } if (!_browserHostMode) { try { maybeAutoApplyOnQuit(); } catch { /* ignore */ } } });
 const monacoHost = new MonacoHost();
 const qzSpawn = new QzSpawn(portable.root);
 const cacheStore = new CacheStore(portable.cache);
@@ -720,6 +753,22 @@ app.whenReady().then(async () => {
             setTimeout(() => { try { mediaService.ensureHwEncoder(); } catch { /* ignore */ } }, 4000);
         } catch (e: any) {
             try { console.warn('[player-host] boot failed:', (e && e.message) || e); } catch { /* ignore */ }
+            try { app.quit(); } catch { /* ignore */ }
+        }
+        return;
+    }
+
+    // ═══ 受控浏览器域（--qqqide-browser；详 shell/browser-host.ts）════════════════════
+    //   极简启动链：便携域 → 单例 → 浏览器窗 + CDP 调试口（8335 段）+ 报告文件；
+    //   跳过面（刻意）：更新/组件自检/gaea/wq-ping/遥测/自动更新器/IDE 全部 IPC。
+    if (_browserHostMode) {
+        if (!gotTheLock) { app.quit(); return; }       // 第二实例：argv 已归持锁实例处理 → 静默退
+        app.on('window-all-closed', () => { try { app.quit(); } catch { /* ignore */ } });
+        try {
+            browserHostRun({ root: portable.root, userData: portable.userData, cdpPort: _cdpPort });
+        } catch (e: any) {
+            try { console.warn('[browser-host] boot failed:', (e && e.message) || e); } catch { /* ignore */ }
+            try { browserHostReportFailure(e); } catch { /* ignore */ }
             try { app.quit(); } catch { /* ignore */ }
         }
         return;

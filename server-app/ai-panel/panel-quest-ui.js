@@ -259,6 +259,16 @@ async function switchQuest(id) {
         // ★ 切换后同步电子钟状态
         if (typeof _updateQuestClock === 'function') _updateQuestClock();
     }
+    // ★ 2026-10-14：切回收尾补偿点（队列=用户财产）——目标 quest 空闲且队列有残留（历史漏排/异常中断
+    //   留下的待命项）时立即接续。条件与 finally 排水同规：空闲 + 链条真空 + 未暂停 + 非 fatal；
+    //   位于切换收尾之后（切换进行期间恒不排水——_triggerQueueSend 内 _switching 门不变）。
+    try {
+        var _cuAg = _activeAgent;
+        if (_cuAg && _cuAg._queue && _cuAg._queue.length > 0 && !_cuAg._queuePaused
+            && _cuAg._stopState !== 'fatal' && _queueDrainIdle() && !streaming && !_sending) {
+            _triggerQueueSend(id, _cuAg);
+        }
+    } catch (_) { }
 }
 
 // \u2500\u2500 \u751f\u6210 quest/floor \u6587\u4ef6\u5939\u540d\uff1aq{n}.{\u5b89\u5168\u5316\u6587\u672c} \u6216 f{n}.{\u5b89\u5168\u5316\u6587\u672c} \u2500\u2500
@@ -1716,12 +1726,12 @@ function _triggerQueueSend(_targetQuestId, _srcAgent) {
     if (!_q || _q.length === 0) { if (_canRender) renderQueueStrip(); return; }
     var next = _q.shift();
     if (_canRender) renderQueueStrip();
-    if (_isHome) {
-        _debounceSaveQueue();
-    } else if (_aq && typeof _saveAgentQuestData === 'function') {
-        // 后台任务排水：队列变更必须精确写回该任务自己的 quest（saveQuestData 恒用面板活跃对 → 会写错槽）
-        try { _saveAgentQuestData(_tq, _aq, null, { skipDomFlush: true }).catch(function () { }); } catch (_) { }
-    }
+    // ★ 2026-10-14：出队持久化恒走 meta 合并写（唯一入口 _questMetaPatch）——楼层刚完结时目标楼层已密封，
+    //   _saveAgentQuestData 整函数早退（旧「后台精确写回」实际从未落盘）；队列恒显式携目标 quest。
+    try {
+        if (_aq && typeof _questMetaPatch === 'function') _questMetaPatch(_tq, { queue: _aq._queue || [] });
+    } catch (_) { }
+    if (_isHome) _debounceSaveQueue();
     // ★ 直通载荷（2026-08-20 定案）：队列消息不经过编辑框——直接构建 intent 发送。
     //   编辑框草稿（文字/图片）永不被触碰/覆盖 → 草稿保护机制整体废除，
     //   自动暂停唯一来源 = 人工点「暂停」按钮。

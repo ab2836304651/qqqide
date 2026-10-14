@@ -72,6 +72,8 @@ body{font-family:ui-monospace,Consolas,"Courier New",monospace;font-size:13px;co
 <script src="vendor/xterm/xterm.js"></script>
 <script src="vendor/xterm/xterm-addon-fit.js"></script>
 <script src="../../core/i18n.js"></script>
+<script src="../../core/drag-text.js"></script>
+<script src="../../core/term-drop.js"></script>
 <script>
 (function () {
     'use strict';
@@ -461,6 +463,27 @@ body{font-family:ui-monospace,Consolas,"Courier New",monospace;font-size:13px;co
     document.addEventListener('paste', function (e) {
         if (_ownPasteAt && (Date.now() - _ownPasteAt) < 400) { e.preventDefault(); e.stopPropagation(); }
     }, true);
+
+    /* ── 拖入接收（2026-10-12）：拖入 = 粘贴（同 Ctrl+V 通道 _sendPastedText，绝不回车）──
+       文件/图片/文件夹 → 按当前 shell 方言引用成路径文本（cmd "…" / PS '…' / gitbash '…'）；
+       外拖文本 → 原样；机 = core/term-drop.js（唯一源，kmd/qmd 共用；引用规则见该文件头） */
+    if (window.qqqTermDrop) {
+        window.qqqTermDrop.install(document, {
+            shell: function () { return shellType; },
+            insert: function (t) {
+                if (!t) return;
+                if (!running || !sessionId) {
+                    setStatus(_kk('goods.qmd.dropIdle', '会话未就绪 · 拖入未插入'));
+                    setTimeout(function () { setStatus(''); }, 2500);
+                    return;
+                }
+                _sendPastedText(t);
+            },
+            onNoPath: function (n) {
+                if (term) term.write('\r\n\x1b[2m' + _kk('goods.qmd.dropNoPath', '── 拖入忽略 {0} 项（无本地路径）──', String(n)) + '\x1b[0m\r\n');
+            }
+        });
+    }
 
     syncTheme();
     // 通知父窗口本 iframe 就绪 → 收 qmd:init

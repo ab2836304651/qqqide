@@ -7,6 +7,17 @@
 // 支持多实例：每个文件夹可打开独立搜索标签，标签名 = 手绘图标(search) + 文件夹名
 //   （图标挂载 = core/tab-manager.js TAB_ICON_MAP，非本文件职责）。
 // 外部触发：AI 视口豆腐块放大镜按钮 → 打开搜索标签 + 自动填入对应目录。
+//
+// ★ 投递契约（唯一发送入口 = _postToTab，定向到单卡；禁广播——跨卡污染根因）：
+//   tab→iframe { type:'qqqide-search-set-scope', path, query, run, focus }
+//     path=搜索范围（变了才写）；query=回填搜索词（字符串即写，绝不触发搜索）；
+//     run=true 才执行搜索 —— 唯一自动搜索开关（恢复/仅设范围一律不带）；
+//     focus=true 才聚焦搜索框（恢复不抢焦点）。
+//   iframe→tab { type:'qqqide-search-title', path, query }（标签标题随搜索上下文）。
+//   iframe 未建（懒建卡未激活）/未加载完成 → 存 tab._searchPending 单一待发槽，
+//   构建完成 load 时补发（最新覆盖——同一意图绝不重复执行）。
+// ★ 恢复 ≠ 搜索：重启恢复的卡只回填范围 + 搜索词，停在空闲态（回车才搜）；
+//   恢复卡懒建（tab-manager opts.lazy，未激活连 iframe 都不建）+ 不抢活跃标签/焦点。
 // ============================================================================
 (function () {
     'use strict';
@@ -33,15 +44,7 @@
                     closable: true,
                     // ★ 多实例：每次「打开」= 再开一个新标签（菜单行2 按钮同语义；单例即弃）
                     multi: true,
-                    build: function (pane) {
-                        pane.style.cssText = 'position:relative; width:100%; height:100%; overflow:hidden;';
-                        var iframe = document.createElement('iframe');
-                        iframe.src = '/qqqide/goods/search/search-ui.html';
-                        iframe.style.cssText = 'width:100%; height:100%; border:none;';
-                        iframe.setAttribute('frameborder', '0');
-                        pane.appendChild(iframe);
-                        pane._searchIframe = iframe;
-                    },
+                    build: _buildSearchPane,
                 },
             },
         });
@@ -50,10 +53,56 @@
     // ---- per-tab metadata (tabId → {folderPath, query}) ----
     var _searchTabMeta = {};
 
-    // ---- 外部 API: 打开搜索标签并自动填入搜索范围 ----
-    // opts.targetFolder: 目标文件夹路径（设为搜索范围）
-    // opts.newWindow: true → 总是打开新标签（多实例）；false/省略 → 复用已有
-    window.qqqideOpenSearch = function (folderPath, newWindow) {
+    // ---- 面板构建（唯一构建体；tab-manager 懒建卡首次激活时回调）----
+    function _buildSearchPane(pane, tab) {
+        pane.style.cssText = 'position:relative; width:100%; height:100%; overflow:hidden;';
+        var iframe = document.createElement('iframe');
+        iframe.src = '/qqqide/goods/search/search-ui.html';
+        iframe.style.cssText = 'width:100%; height:100%; border:none;';
+        iframe.setAttribute('frameborder', '0');
+        // ★ 就绪信号 = load（监听器先于导航完成挂上 → 此后定向投递必达接收端监听器）
+        iframe.addEventListener('load', function () {
+            iframe._srchLoaded = true;
+            _flushPending(tab, iframe);
+        });
+        pane.appendChild(iframe);
+        pane._searchIframe = iframe;
+    }
+
+    // ---- 投递机：定向单卡（禁广播）；iframe 未建/未加载 → 单一待发槽，load 补发 ----
+    function _iframeOf(tabId) {
+        var pane = document.querySelector('.qqq-tab-pane[data-tab-id="' + tabId + '"]');
+        if (!pane) return null;
+        return pane._searchIframe || pane.querySelector('iframe[src*="search-ui.html"]');
+    }
+    function _flushPending(tab, iframe) {
+        var msg = tab && tab._searchPending;
+        if (!msg) return;
+        tab._searchPending = null;
+        try { iframe.contentWindow.postMessage(msg, '*'); } catch (_) { }
+    }
+    function _tryFlush(tab) {
+        if (!tab || !tab._searchPending) return;
+        var iframe = _iframeOf(tab.id);
+        if (!iframe) return;   // 懒建卡未激活（iframe 未建）→ 留待激活构建后 load 补发
+        if (!iframe._srchLoaded) {
+            try { if (iframe.contentWindow && iframe.contentWindow.document.readyState === 'complete') iframe._srchLoaded = true; } catch (_) { }
+        }
+        if (iframe._srchLoaded) _flushPending(tab, iframe);
+    }
+    function _postToTab(tab, msg) {
+        if (!tab) return;
+        tab._searchPending = msg;
+        _tryFlush(tab);
+        setTimeout(function () { _tryFlush(tab); }, 400);    // 加载竞态兜底（主路 = load 事件）
+        setTimeout(function () { _tryFlush(tab); }, 1200);
+    }
+
+    // ---- 外部 API: 打开搜索标签并填入搜索范围（+ 可选执行搜索词）----
+    // folderPath: 目标文件夹路径（设为搜索范围）
+    // newWindow:  true → 总是打开新标签（多实例）；false/省略 → 复用已有
+    // query:      非空 → 打开后执行该搜索（唯一「显式搜索」出口；省略/空 = 只设范围不搜）
+    window.qqqideOpenSearch = function (folderPath, newWindow, query) {
         if (!window.qqqTabs) return;
 
         var gaeaGrp = window.qqqTabs.getGaeaGroup();
@@ -67,75 +116,33 @@
             folderName = idx >= 0 ? p.slice(idx + 1) : p;
         }
         var tabTitle = folderName ? folderName : 'search';
+        var q = (typeof query === 'string') ? query : '';
 
         var tab = null;
         if (newWindow) {
             // Multi-instance: always create new tab
-            var buildFn = function (pane) {
-                pane.style.cssText = 'position:relative; width:100%; height:100%; overflow:hidden;';
-                var iframe = document.createElement('iframe');
-                iframe.src = '/qqqide/goods/search/search-ui.html';
-                iframe.style.cssText = 'width:100%; height:100%; border:none;';
-                iframe.setAttribute('frameborder', '0');
-                pane.appendChild(iframe);
-                pane._searchIframe = iframe;
-            };
-            tab = window.qqqTabs.addGaeaTab('search', tabTitle, buildFn, { closable: true, multi: true });
+            tab = window.qqqTabs.addGaeaTab('search', tabTitle, _buildSearchPane, { closable: true, multi: true });
         } else {
-            // Try to reuse existing
+            // Try to reuse existing（duplicate 检查在 addGaeaTab 内 → 命中即激活并返回原卡）
             var existing = gaeaGrp.tabs.find(function (t) { return t.gaeaId === 'search'; });
             if (existing) {
                 tab = window.qqqTabs.addGaeaTab('search', tabTitle, null, { closable: true });
             } else {
-                var def = window.qqqGaea && window.qqqGaea.get && window.qqqGaea.get('search');
-                var buildFn2 = null;
-                if (def && def.tabs && def.tabs.search && typeof def.tabs.search.build === 'function') {
-                    buildFn2 = def.tabs.search.build;
-                }
-                if (!buildFn2) {
-                    buildFn2 = function (pane) {
-                        pane.style.cssText = 'position:relative; width:100%; height:100%; overflow:hidden;';
-                        var iframe = document.createElement('iframe');
-                        iframe.src = '/qqqide/goods/search/search-ui.html';
-                        iframe.style.cssText = 'width:100%; height:100%; border:none;';
-                        iframe.setAttribute('frameborder', '0');
-                        pane.appendChild(iframe);
-                        pane._searchIframe = iframe;
-                    };
-                }
-                tab = window.qqqTabs.addGaeaTab('search', tabTitle, buildFn2, { closable: true });
+                tab = window.qqqTabs.addGaeaTab('search', tabTitle, _buildSearchPane, { closable: true });
             }
         }
 
-        // Store metadata for tab title persistence
+        // Store metadata for tab title persistence（复用卡：空 query 不清旧词）
         if (tab) {
             tab._searchFolder = folderPath || '';
-            tab._searchQuery = '';
-            _searchTabMeta[tab.id] = { folderPath: folderPath || '', query: '' };
+            if (q) tab._searchQuery = q;
+            _searchTabMeta[tab.id] = { folderPath: folderPath || '', query: q || (tab._searchQuery || '') };
             _persistSearchTabs();
+            var msg = { type: 'qqqide-search-set-scope', path: folderPath || '', focus: true };
+            if (q) { msg.query = q; msg.run = true; }
+            _postToTab(tab, msg);
         }
-
-        // Wait for iframe to load, then set scope
-        setTimeout(function () {
-            _setSearchScope(folderPath);
-        }, 300);
-        setTimeout(function () {
-            _setSearchScope(folderPath);
-        }, 800);
     };
-
-    function _setSearchScope(folderPath) {
-        if (!folderPath) return;
-        var panes = document.querySelectorAll('.qqq-tab-pane');
-        for (var i = 0; i < panes.length; i++) {
-            var iframe = panes[i]._searchIframe || panes[i].querySelector('iframe[src*="search-ui.html"]');
-            if (iframe && iframe.contentWindow) {
-                try {
-                    iframe.contentWindow.postMessage({ type: 'qqqide-search-set-scope', path: folderPath }, '*');
-                } catch (_) { }
-            }
-        }
-    }
 
     // ---- Listen for tab-rename requests from search iframe ----
     window.addEventListener('message', function (e) {
@@ -207,7 +214,8 @@
                 tabs.push({
                     folderPath: t._searchFolder || '',
                     query: t._searchQuery || '',
-                    title: t.title
+                    title: t.title,
+                    active: t.id === grp.activeTabId      // 恢复只活跃这一张（tab-manager opts.activate）
                 });
             }
         }
@@ -215,6 +223,8 @@
     }
 
     var _restoreRetries = 0;
+    // ★ 恢复 ≠ 搜索（唯一自动搜索开关 = 消息里的 run）：本函数只回填范围 + 搜索词（停空闲态，
+    //   回车才搜）；恢复卡懒建（lazy，未激活连 iframe 都不建）+ 不抢活跃标签/焦点。
     function _restoreSearchTabs() {
         if (_restoreRetries > 30) return;  // give up after ~18s
         _restoreRetries++;
@@ -223,43 +233,30 @@
         if (!window.qqqTabs || !window.qqqTabs.addGaeaTab) { setTimeout(_restoreSearchTabs, 400); return; }
         db.get('search.tabs').then(function (tabs) {
             if (!Array.isArray(tabs) || tabs.length === 0) return;
+            var pick = null;
             for (var i = 0; i < tabs.length; i++) {
                 var t = tabs[i];
                 if (!t.folderPath) continue;
-                var folderName = '';
                 var p = t.folderPath.replace(/\\/g, '/').replace(/\/$/, '');
                 var idx = p.lastIndexOf('/');
-                folderName = idx >= 0 ? p.slice(idx + 1) : p;
-                var tabTitle = t.title || folderName;
-                var buildFn = function (pane) {
-                    pane.style.cssText = 'position:relative; width:100%; height:100%; overflow:hidden;';
-                    var iframe = document.createElement('iframe');
-                    iframe.src = '/qqqide/goods/search/search-ui.html';
-                    iframe.style.cssText = 'width:100%; height:100%; border:none;';
-                    iframe.setAttribute('frameborder', '0');
-                    pane.appendChild(iframe);
-                    pane._searchIframe = iframe;
-                };
-                var tab = window.qqqTabs.addGaeaTab('search', tabTitle, buildFn, { closable: true, multi: true });
-                if (tab) {
-                    tab._searchFolder = t.folderPath;
-                    tab._searchQuery = t.query || '';
-                    _searchTabMeta[tab.id] = { folderPath: t.folderPath, query: t.query || '' };
-                    // Set scope in iframe after load
-                    (function (fp, q) {
-                        setTimeout(function () {
-                            var panes = document.querySelectorAll('.qqq-tab-pane');
-                            for (var j = 0; j < panes.length; j++) {
-                                var iframe = panes[j]._searchIframe || panes[j].querySelector('iframe[src*="search-ui.html"]');
-                                if (iframe && iframe.contentWindow) {
-                                    try {
-                                        iframe.contentWindow.postMessage({ type: 'qqqide-search-set-scope', path: fp, query: q || '' }, '*');
-                                    } catch (_) { }
-                                }
-                            }
-                        }, 600);
-                    })(t.folderPath, t.query);
-                }
+                var folderName = idx >= 0 ? p.slice(idx + 1) : p;
+                var tab = window.qqqTabs.addGaeaTab('search', t.title || folderName, _buildSearchPane, {
+                    closable: true, multi: true,
+                    lazy: true,             // 未激活的卡连 iframe 都不建（启动期零解析）
+                    activate: false         // 一律不抢——活跃回认在循环后单点裁决
+                });
+                if (!tab) continue;
+                tab._searchFolder = t.folderPath;
+                tab._searchQuery = t.query || '';
+                _searchTabMeta[tab.id] = { folderPath: t.folderPath, query: t.query || '' };
+                // 回填走定向投递（懒建卡先入待发槽，首次激活构建完成 load 时补发）
+                _postToTab(tab, { type: 'qqqide-search-set-scope', path: t.folderPath, query: t.query || '' });
+                if (t.active) pick = tab;     // 与列表同记录原子落盘（同一次写盘 = 内部自洽）
+            }
+            // 唯一激活点：仅退出时活跃的那张卡恢复活跃（无此卡则维持现状——绝不抢）
+            if (pick) {
+                var grp2 = window.qqqTabs.getGaeaGroup && window.qqqTabs.getGaeaGroup();
+                if (grp2) window.qqqTabs.activateTab(grp2, pick.id);
             }
         }).catch(function () { });
     }

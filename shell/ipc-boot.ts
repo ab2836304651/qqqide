@@ -8,6 +8,7 @@ import { ipcMain, BrowserWindow } from 'electron';
 import { BootConfig, BootMode, healthCheck, loadStaticFallback, loadRemoteWithCacheGuard, isBootCompleted } from './boot';
 import { readManifestId } from './version';
 import { getComponentBin, installComponent } from './component-checker';
+import { nodeFacadePath } from './ipc-syspy';
 
 export function registerBootIpc(
     portableRoot: string,
@@ -22,6 +23,10 @@ export function registerBootIpc(
     ipcMain.handle('qqqide:app:root', () => portableRoot);
 
     ipcMain.handle('qqqide:components:getBin', (_e, name: string) => {
+        // ★ node 门面（静态资产 engines/node/，非 manifest 组件）——渲染层「运行」等入口同源解析，禁第二套拼路径
+        if (String(name) === 'node') {
+            try { return nodeFacadePath(portableRoot); } catch { return null; }
+        }
         return getComponentBin(portableRoot, name);
     });
 

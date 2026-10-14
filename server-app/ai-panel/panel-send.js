@@ -453,11 +453,22 @@ async function _retrySameFloor(questId, agent, linkEl) {
     if (agent._recoveryRetryCount >= 3) {
         if (typeof _capRecoveryLink === 'function') _capRecoveryLink(agent, _originFloor);
         _finishRecovery(linkEl, agent, false);
+        // ★ 耗尽提示带真实原因：优先拼楼层错误日志末条——参数/配置类错误不再被通用归因
+        //   （旧句恒说「计费/配额或服务器故障」，把「服务商拒绝参数」等真因盖掉）；无日志时用中性句。
+        var _rxMsg = '';
         try {
-            if (parent && parent.qqqideQoast) parent.qqqideQoast.show(
-                ((typeof _i === 'function') ? _i('ai.retryExhausted', '已重试 3 次仍未成功，可能是计费/配额耗尽或服务器故障，请稍后再试') : '已重试 3 次仍未成功，可能是计费/配额耗尽或服务器故障，请稍后再试'),
-                { type: 'error', duration: 5000 }
-            );
+            var _rxSt = agent._questErrorState && agent._questErrorState[_originFloor];
+            if (_rxSt && _rxSt.log && _rxSt.log.length) _rxMsg = String(_rxSt.log[_rxSt.log.length - 1].reason || '').slice(0, 200);
+        } catch (_) { }
+        var _rxText;
+        if (_rxMsg) {
+            _rxText = ((typeof _i === 'function') ? _i('ai.retryExhaustedDetail', '已重试 3 次仍未成功 — 最近错误：{msg}') : '已重试 3 次仍未成功 — 最近错误：{msg}');
+            _rxText = String(_rxText).split('{msg}').join(_rxMsg);
+        } else {
+            _rxText = ((typeof _i === 'function') ? _i('ai.retryExhausted', '已重试 3 次仍未成功，请稍后再试；若持续失败，请检查网络、账户或服务商配置') : '已重试 3 次仍未成功，请稍后再试；若持续失败，请检查网络、账户或服务商配置');
+        }
+        try {
+            if (parent && parent.qqqideQoast) parent.qqqideQoast.show(_rxText, { type: 'error', duration: 9000 });
         } catch (_) { }
         return;
     }

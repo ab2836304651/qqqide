@@ -612,6 +612,23 @@
     _feedToAiActions.set(ed, { disposable: disposable, filePath: filePath, monaco: monaco });
   }
 
+  // ── 运行：编辑器右键 → 用内置解释器运行（core/run-machine.js 唯一机；.py/.pyw→Python、.js/.mjs/.cjs→Node）──
+  function _addRunAction(ed, monaco, filePath) {
+    if (!ed || !monaco || !filePath) return;
+    try {
+      if (!window.qqqRunMachine || !window.qqqRunMachine.runnerFor(filePath)) return; // 不可运行类型：不加菜单项
+    } catch (_) { return; }
+    ed.addAction({
+      id: 'qqq-run-file',
+      label: window._i ? window._i('editor.run', '运行') : '运行',
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 1.4,
+      run: function () {
+        try { window.qqqRunMachine.run({ filePath: filePath, editor: ed }); } catch (_) { }
+      }
+    });
+  }
+
 
 
 
@@ -1058,6 +1075,7 @@
  
       _applyMinimapPref(ed, monaco, filePath);
       _addFeedToAiAction(ed, monaco, filePath);
+      _addRunAction(ed, monaco, filePath);
       // ★ Markdown 预览 action（pane 编辑器；同 md-preview.js）
       try { window.__qqqMdAttachAction && window.__qqqMdAttachAction(ed, monaco, filePath); } catch (_) {}
       // 括号匹配（自实现）
@@ -1927,6 +1945,16 @@
     openInPane,
     // ★ 路径级脏查询（tab-manager 预览复用/状态同步用，唯一真理 = _paneDirtyMap）
     isPathDirty: function (filePath) { return !!_paneDirtyMap[_normFP(filePath)]; },
+    // ★ 运行前置：脏缓冲先过保存唯一闸门（run-machine 消费；失败/冲突 → false，UI 由闸门自报）
+    saveIfDirty: async function (filePath) {
+      filePath = _normFP(filePath);
+      var ed = _paneEditors[filePath];
+      if (!ed || !_paneDirtyMap[filePath]) return true;
+      try {
+        var r = await _saveWithGuard(filePath, ed, { trigger: 'run' });
+        return !!(r && r.ok);
+      } catch (_) { return false; }
+    },
     // ★ 2026-09-05 另存转换后簿记（编码菜单 B 区）：清脏 + 刷新 mtime 快照
     noteSaved: async function (filePath) {
       filePath = _normFP(filePath);   // ★ 路径归一

@@ -15,7 +15,7 @@
 /* ============================================================================
    WYSIWYG 相框（frame-renderer.js；老 q3 buildAfterStyle / createProgressSvg 口径）
    几何: 外框 = preview + 12（6 内容余量 + 2*2 padding + 2*1 虚线边）；
-   底色/棋盘格/边框全部由 frame-renderer 内联（含亮暗两套），此处只管结构与进度条。
+   底色/棋盘格/边框全部由 frame-renderer 内联；棋盘格双色恒取主题变量 --frame-checker-a/b（亮暗两套随主题自动切换），此处只管结构与进度条。
    ============================================================================ */
 .qqq-vz-media {
   display: inline-block;

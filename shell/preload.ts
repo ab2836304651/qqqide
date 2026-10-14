@@ -869,6 +869,8 @@ interrupt: (id: string) => ipcRenderer.invoke('qqqide:qmd:interrupt', id),
         reveal: (p: string) => ipcRenderer.invoke('qqqide:player:reveal', p),
         revealMode: () => ipcRenderer.invoke('qqqide:player:reveal-mode'),
         close: () => ipcRenderer.invoke('qqqide:player:close'),
+        // ★ 定时关机（v25）：定时面板勾选「定时关机」→ 到点暂停一切播放后执行系统关机（三平台；壳层裁决命令映射）
+        scheduledShutdown: () => ipcRenderer.invoke('qqqide:player:scheduled-shutdown'),
     },
 
     // ---- fileAssoc（文件关联；2026-10-03 播放器定案 + 2026-10-07 编辑器域）----

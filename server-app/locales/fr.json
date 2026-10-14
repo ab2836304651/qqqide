@@ -261,7 +261,6 @@
             "removeTitle": "Supprimer l'élément",
             "removeConfirm": "Êtes-vous sûr de vouloir retirer « {n} » de la vue IA ?",
             "removeBtn": "Supprimer",
-            "removeAsk": "Supprimer « {n} » ?",
             "openElsewhere": "⚠️ Cet élément est déjà ouvert comme dossier principal dans une autre fenêtre",
             "clearedBusy": "⚠️ Le dossier principal est déjà utilisé par une autre fenêtre, la vue AI a été réinitialisée à une fenêtre vide",
             "filterPh": "Filtrer...",
@@ -427,6 +426,10 @@
         "timelineNoRoot": "Impossible de déterminer le répertoire racine du projet pour ce fichier, la chronologie n'est pas disponible",
         "timelineOpenFail": "Échec de l'ouverture de la fenêtre de chronologie, veuillez réessayer ultérieurement",
         "minimap": "Minimap",
+        "run": "Exécuter",
+        "runNoInterp": "L'interpréteur intégré n'est pas prêt (composants manquants)",
+        "runNoTerm": "Impossible d'ouvrir le terminal",
+        "runFail": "Échec de l'exécution",
         "tabs": {
             "close": "Fermer l'onglet",
             "closeOthers": "Fermer les autres",
@@ -838,6 +841,8 @@
             "showKey": "Afficher/Masquer",
             "model": "Nom du modèle",
             "modelPh": "Nom du modèle dans la documentation du fournisseur",
+            "maxTokens": "Tokens de sortie max (facultatif)",
+            "maxTokensPh": "Vide = valeur par défaut du fournisseur (recommandé)",
             "fetchModels": "Récupérer la liste des modèles",
             "probeLocal": "Détecter les modèles locaux",
             "needBase": "Veuillez d'abord saisir l'adresse de l'interface",
@@ -924,7 +929,8 @@
         "waitNew": "L'IA n'a pas encore répondu à la tâche en cours, veuillez patienter avant d'en créer une nouvelle",
         "recoverPrefix": "Reconnexion après rétablissement du réseau. Historique des interruptions précédentes :",
         "recoverSuffix": "｜Veuillez poursuivre la tâche originale en vous basant sur le contexte complet de la conversation.",
-        "retryExhausted": "Échec après 3 tentatives, probablement dû à l'épuisement du quota/facturation ou à une panne serveur, veuillez réessayer plus tard",
+        "retryExhausted": "Échec après 3 tentatives. Veuillez réessayer ultérieurement ; si le problème persiste, vérifiez votre connexion réseau, votre compte ou la configuration du fournisseur de services.",
+        "retryExhaustedDetail": "Échec après 3 tentatives — dernière erreur : {msg}",
         "pathIncompatible": "Le chemin contient des caractères incompatibles, impossible d'ajouter",
         "bulletTrunc": "\n\n... [Partie centrale tronquée, original {0}KB] ...\n\n",
         "exhaustedMsg": "⚠ Nombre maximal d'appels d'outils atteint (200), mais l'IA n'a pas pu générer de réponse finale. Le contexte de la conversation est conservé, vous pouvez continuer à poser des questions.",
@@ -1021,7 +1027,8 @@
             "intDone": "── Ctrl+C · {0} processus terminé(s) ──",
             "intIdle": "── Ctrl+C · Aucune commande en cours d'exécution ──",
             "intSig": "── Ctrl+C · Signal d'interruption envoyé ──",
-            "intRestart": "── Ctrl+C · La mise à niveau du shell nécessite un redémarrage de l'instance pour prendre effet ──"
+            "intRestart": "── Ctrl+C · La mise à niveau du shell nécessite un redémarrage de l'instance pour prendre effet ──",
+            "dropNoPath": "── Ignoré lors du glisser-déposer : {0} élément(s) (aucun chemin local) ──"
         },
         "git": {
             "refresh": "Actualiser",
@@ -1288,7 +1295,9 @@
             "intFail": "[Échec de l'interruption] {0}",
             "terminated": "Terminé · Peut être redémarré avec Restart",
             "termLine": "── Session terminée (Redémarrer pour relancer) ──",
-            "deadHint": "État terminé · Utilisez Restart pour redémarrer"
+            "deadHint": "État terminé · Utilisez Restart pour redémarrer",
+            "dropNoPath": "── Ignoré lors du glisser-déposer : {0} élément(s) (aucun chemin local) ──",
+            "dropIdle": "Session non prête · Glisser-déposer non inséré"
         },
         "dsecret": {
             "targetProject": "Projet cible",
@@ -2230,6 +2239,12 @@
             "saveConsole": "Enregistrer les journaux de la console",
             "logFile": "Fichier journal",
             "saveFile": "Enregistrer le fichier"
+        },
+        "browserHost": {
+            "title": "qd (qqqide) Navigateur",
+            "startHosted": "Cette fenêtre est gérée par qqqide : l'IA y effectue des opérations web.",
+            "startMonitor": "Pendant une tâche, vous pouvez suivre la progression en direct ici ; lorsque votre intervention est requise (ex. connexion), l'IA vous attend ici.",
+            "startHint": "Fermer cette fenêtre quitte le navigateur ; la connexion est conservée pour la prochaine fois."
         },
         "browser": {
             "openFailTitle": "Impossible d'ouvrir automatiquement le navigateur — qd (qqqide)",

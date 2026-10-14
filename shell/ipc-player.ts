@@ -33,6 +33,7 @@
 import { app, BrowserWindow, ipcMain, screen, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import { spawn } from 'child_process';
 import { getOsBaseDir } from './portable-paths';
 import { prefsFromStore, applyPrefsToSession, notePrefChanges, mergePrefsIntoStore } from './player-prefs';
 import { climbRevealTarget } from './player-reveal';
@@ -697,6 +698,33 @@ function revealViaFileManager(p: string): { ok: boolean; reason?: string } {
     return { ok: false, reason: 'missing' };
 }
 
+/** 定时关机（v25）：三平台系统关机命令——一次一发；'spawn' 事件 = 已交给系统；错误（命令缺失/权限）如实回执。 */
+function _spawnScheduledShutdown(): Promise<{ ok: boolean; reason?: string }> {
+    return new Promise((resolve) => {
+        try { console.log('[player] scheduled shutdown (' + process.platform + ')'); } catch { /* ignore */ }
+        let done = false;
+        const finish = (ok: boolean, reason?: string) => { if (!done) { done = true; resolve(reason ? { ok, reason } : { ok }); } };
+        const cmds: Array<[string, string[]]> = process.platform === 'win32'
+            ? [['shutdown', ['/s', '/t', '0']]]
+            : process.platform === 'darwin'
+                ? [['osascript', ['-e', 'tell application "System Events" to shut down']]]
+                : [['systemctl', ['poweroff']], ['shutdown', ['-h', 'now']]];   // linux：systemd 首选，无 systemd 回退
+        const run = (i: number) => {
+            try {
+                const [cmd, args] = cmds[i];
+                const child = spawn(cmd, args, { windowsHide: true, stdio: 'ignore', detached: true });
+                child.once('error', (err: any) => {
+                    if (i + 1 < cmds.length) { run(i + 1); return; }   // 命令缺失（ENOENT）→ 回退下一条
+                    finish(false, String((err && err.code) || err));
+                });
+                child.once('spawn', () => { try { child.unref(); } catch { /* ignore */ } finish(true); });
+                setTimeout(() => finish(true), 1500);   // 兜底：两事件均未达（极端）——视为已发出
+            } catch (err: any) { finish(false, String((err && err.message) || err)); }
+        };
+        run(0);
+    });
+}
+
 export function registerPlayerIpc(root: string, bootUrl: string, appVersion: string): void {
     if (_registered) { return; }
     _registered = true;
@@ -804,6 +832,16 @@ export function registerPlayerIpc(root: string, bootUrl: string, appVersion: str
 
     ipcMain.handle('qqqide:player:close', (e) => {
         try { const en = _entryOf(e); if (en) { en.win.close(); } return { ok: true }; } catch { return { ok: false }; }
+    });
+
+    // ★ 定时关机（v25，2026-10-14 q319 用户定案）：定时面板「定时关机」勾选 → 到点由渲染层请求本通道执行系统关机。
+    //   仅认播放器窗（_entryOf 非空）；三平台命令映射在 _spawnScheduledShutdown；错误如实回执（渲染层浮读上报）。
+    ipcMain.handle('qqqide:player:scheduled-shutdown', async (e) => {
+        try {
+            const en = _entryOf(e);
+            if (!en) { return { ok: false, reason: 'not-player' }; }
+            return await _spawnScheduledShutdown();
+        } catch (err: any) { return { ok: false, reason: String((err && err.message) || err) }; }
     });
 
     // 截图「📂 Roam 定位」（2026-10-03 q319 跨进程重设计）：宿主域 = 请求同安装 IDE（reveals 队列 → 「正在操作滴」IDE

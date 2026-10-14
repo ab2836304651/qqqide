@@ -261,7 +261,6 @@
             "removeTitle": "移除项目",
             "removeConfirm": "确定从 AI 视口移除「{n}」？",
             "removeBtn": "移除",
-            "removeAsk": "移除「{n}」？",
             "openElsewhere": "⚠️ 该项目已在另一个窗口作为主文件夹打开",
             "clearedBusy": "⚠️ 主文件夹已被另一窗口占用，AI 视口已清空为干净窗口",
             "filterPh": "筛选...",
@@ -427,6 +426,10 @@
         "timelineNoRoot": "无法确定该文件的项目根目录，时间线不可用",
         "timelineOpenFail": "时间线窗口打开失败，请稍后重试",
         "minimap": "小地图",
+        "run": "运行",
+        "runNoInterp": "内置解释器未就绪（组件缺失）",
+        "runNoTerm": "无法打开终端",
+        "runFail": "运行失败",
         "tabs": {
             "close": "关闭标签",
             "closeOthers": "关闭其他",
@@ -838,6 +841,8 @@
             "showKey": "显示/隐藏",
             "model": "模型名",
             "modelPh": "服务商文档中的模型名",
+            "maxTokens": "最大输出 tokens（可选）",
+            "maxTokensPh": "留空 = 使用服务商默认（推荐）",
             "fetchModels": "获取模型列表",
             "probeLocal": "检测本机模型",
             "needBase": "请先填写接口地址",
@@ -924,7 +929,8 @@
         "waitNew": "当前任务 AI 尚未回复，请稍后再新建",
         "recoverPrefix": "网络恢复重连。此前楼层中断记录：",
         "recoverSuffix": "｜请基于完整对话上下文继续完成原始任务。",
-        "retryExhausted": "已重试 3 次仍未成功，可能是计费/配额耗尽或服务器故障，请稍后再试",
+        "retryExhausted": "已重试 3 次仍未成功，请稍后再试；若持续失败，请检查网络、账户或服务商配置",
+        "retryExhaustedDetail": "已重试 3 次仍未成功 — 最近错误：{msg}",
         "pathIncompatible": "路径含不兼容字符，无法附加",
         "bulletTrunc": "\n\n... [中间已截断, 原始 {0}KB] ...\n\n",
         "exhaustedMsg": "⚠ 已达到最大工具调用次数 (200)，但 AI 未能生成最终回答。对话上下文已保留，你可以继续提问。",
@@ -1020,7 +1026,8 @@
             "intDone": "── Ctrl+C · 已终止 {0} 个进程 ──",
             "intIdle": "── Ctrl+C · 无运行中的命令 ──",
             "intSig": "── Ctrl+C · 已发送中断信号 ──",
-            "intRestart": "── Ctrl+C · 壳层升级需重启实例生效 ──"
+            "intRestart": "── Ctrl+C · 壳层升级需重启实例生效 ──",
+            "dropNoPath": "── 拖入忽略 {0} 项（无本地路径）──"
         },
         "git": {
             "refresh": "刷新",
@@ -1287,7 +1294,9 @@
             "intFail": "[Interrupt 失败] {0}",
             "terminated": "已终止 · 可 Restart 重启",
             "termLine": "── 会话已终止（Restart 可重启）──",
-            "deadHint": "已处于终止态 · Restart 可重启"
+            "deadHint": "已处于终止态 · Restart 可重启",
+            "dropNoPath": "── 拖入忽略 {0} 项（无本地路径）──",
+            "dropIdle": "会话未就绪 · 拖入未插入"
         },
         "dsecret": {
             "targetProject": "目标项目",

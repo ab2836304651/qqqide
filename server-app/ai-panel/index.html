@@ -27,6 +27,46 @@ html{forced-color-adjust:none!important;width:100%}
 /* ── 选中高亮：固定 #ffd301（金），暗主题同色 ── */
 ::selection{background:#ffd301;color:#000}
 [data-theme="dark"] ::selection{background:#ffd301;color:#000}
+/* ── 滚动条统一块（本面板唯一真理源 = qd 无轨极细样式）──────────────────────────
+   一条规则覆盖本文档全部滚动容器（含 JS 动态挂载的弹层：byok 设置窗/模型下拉/背包拆解行区），
+   双向同粗：5px（width+height）· 透明轨道 · 中性灰滑块 rgba(128,128,128,.35)（hover .55）
+   · 3px 圆角 · 无箭头按钮 · 透明拐角。中性灰在浅/暗双主题同一取值即成立（与主窗内置弹窗统一块同源）。
+   ★ 横向例外（用户定案：左右交互必须能点箭头/滑轨，非百分百 qd 风格）——横向条单独加高 + 双端箭头（每端恒一枚：左端◀ 右端▶）+ 直角 + 淡底轨道，
+   见下方「横向例外」段；纵向一切维持本段不变。
+   纪律：组件禁再自注入滚动条样式（历史散落声明已并入本块并删除）；要隐藏某容器滚动条，
+   用更高特异性显式覆盖（范例 #messages）。新增滚动容器零配置自动入列。
+   ★ 横条清单（用户定案：面板内唯一正当横滚区 = 表格 .table-inner / 含 table 的 .table-wrap）——其余容器一律禁出横条：
+   超长消息 .msg-long · 工具结果 .msg-flow-tool-result · byok 设置窗 #byok-panel 三处显式 overflow-x:hidden 钉死
+   （后两者只声明 overflow-y:auto 时 overflow-x 会被计算成 auto = 横条隐患源）；队列卡缩略图行 .bk-row2 恒换行零横条
+   （与输入框图片条 #image-strip 同款）；代码块（pre-wrap+break-all）与 #messages/.quest-drop/#btn-row/.bk-pop/#input 本就 hidden。 */
+*::-webkit-scrollbar{width:5px;height:5px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:rgba(128,128,128,.35);border-radius:3px}
+*::-webkit-scrollbar-thumb:hover{background:rgba(128,128,128,.55)}
+*::-webkit-scrollbar-corner{background:transparent}
+*::-webkit-scrollbar-button{display:none}
+/* ── 横向例外（上块之例外：左右交互须点箭头/滑轨）——仅 :horizontal 分支，纵向维持 5px 无箭头 ──
+   横向条加高至 12px（纵向 5px 的两倍再 +2px）· 双端箭头钮（12px 方形按钮 · 11px 大号三角近满幅、浅灰 #808080@70% 双主题同值；每端恒一枚——左端=◀ 右端=▶）
+   · 方形按钮底色恒透明（禁设任何常驻底色）——按钮区只透基底色，正方形边界靠「基底色 vs 轨道淡底」天然可见 · 反馈不靠底色动浅深：hover = 叠加 1px 细方框描边（描线 #808080@55% 双主题同值，边界即时点亮）· 按下 = 方框 + rgba(128,128,128,.30) 实感底（反馈取值恒远离轨道 .10——禁取接近轨道的淡值，会与轨道无法区分）· 滑块直角 · 轨道极淡底色让可点区可见。
+   ★ 同源镜像：md 预览窗 goods/mdview/mdview.html 头部同块（改任一侧必须同改另一侧）。 */
+*::-webkit-scrollbar:horizontal{height:12px}
+*::-webkit-scrollbar-track:horizontal{background:rgba(128,128,128,.10)}
+*::-webkit-scrollbar-thumb:horizontal{border-radius:0}
+*::-webkit-scrollbar-button:horizontal{display:block;width:12px;height:12px;background-color:transparent;border-radius:0;background-repeat:no-repeat;background-position:center;background-size:11px 11px}
+*::-webkit-scrollbar-button:horizontal:decrement{width:12px;height:12px;background-image:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20d='M6.8,0.5L1.2,4L6.8,7.5Z'%20fill='%23808080'%20fill-opacity='0.7'/%3E%3C/svg%3E")}
+*::-webkit-scrollbar-button:horizontal:increment{width:12px;height:12px;background-image:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20d='M1.2,0.5L6.8,4L1.2,7.5Z'%20fill='%23808080'%20fill-opacity='0.7'/%3E%3C/svg%3E")}
+/* 双钮复位：Chromium 横向条每端本含两枚按钮（back+forward）——上面 display:block 会令四枚全出（每端 ◀▶ 并排）；
+   本例外每端只要一枚 → 显式隐去内层两枚（:start:increment=左端多余的右箭头 / :end:decrement=右端多余的左箭头），
+   恒保：左端 :start:decrement=◀、右端 :end:increment=▶（display:none 为主，宽高归零+去图双保险）。 */
+*::-webkit-scrollbar-button:horizontal:start:increment,
+*::-webkit-scrollbar-button:horizontal:end:decrement{display:none;width:0;height:0;background-image:none}
+/* 箭头钮反馈（不走底色动浅深——禁取接近轨道 .10 的淡值，会与轨道无法区分）：
+   hover = 叠加 1px 细方框描边（描线 #808080@55% 双主题同值，正方形边界即时点亮）· 按下 = 方框 + rgba(128,128,128,.30) 实感底 */
+*::-webkit-scrollbar-button:horizontal:decrement:hover,
+*::-webkit-scrollbar-button:horizontal:decrement:active{background-image:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='12'%20height='12'%3E%3Crect%20x='0.5'%20y='0.5'%20width='11'%20height='11'%20fill='none'%20stroke='%23808080'%20stroke-opacity='0.55'%20stroke-width='1'/%3E%3C/svg%3E"),url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20d='M6.8,0.5L1.2,4L6.8,7.5Z'%20fill='%23808080'%20fill-opacity='0.7'/%3E%3C/svg%3E");background-size:12px 12px,11px 11px}
+*::-webkit-scrollbar-button:horizontal:increment:hover,
+*::-webkit-scrollbar-button:horizontal:increment:active{background-image:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='12'%20height='12'%3E%3Crect%20x='0.5'%20y='0.5'%20width='11'%20height='11'%20fill='none'%20stroke='%23808080'%20stroke-opacity='0.55'%20stroke-width='1'/%3E%3C/svg%3E"),url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20d='M1.2,0.5L6.8,4L1.2,7.5Z'%20fill='%23808080'%20fill-opacity='0.7'/%3E%3C/svg%3E");background-size:12px 12px,11px 11px}
+*::-webkit-scrollbar-button:horizontal:active{background-color:rgba(128,128,128,.30)}
 body{font-family:system-ui,-apple-system,sans-serif;font-size:14px;color:var(--text-primary);background:var(--background-color);width:100%;height:100vh;display:grid;grid-template-columns:100%;grid-template-rows:auto 1fr auto;overflow-x:hidden}
 /* q2 quest 豆腐块 — 无边框贴合 q1 */
 #quest-bar{position:relative;margin:0;padding:0;border:none}
@@ -97,11 +137,8 @@ body{font-family:system-ui,-apple-system,sans-serif;font-size:14px;color:var(--t
 [data-theme="dark"] #quest-bar.quest-expanded .quest-drop-head{background:linear-gradient(90deg,rgba(255,211,2,.16) 0%,rgba(255,211,2,.06) 35%,transparent 70%),#211f1c}
 [data-theme="dark"] #quest-bar.quest-expanded .quest-drop-search{background:transparent}
 [data-theme="dark"] #quest-bar.quest-expanded .quest-drop-search:focus{background:#3f3830}
-/* quest 下拉 — 与豆腐块齐宽、无缝隙，最大高度=AI面板2/3，层级仅次于qoast */.quest-drop{position:absolute;top:calc(100% + 5px);left:0;width:100%;z-index:99990;max-height:66.67vh;overflow-y:auto;overflow-x:hidden;background:#ebe3ca;border:none;border-radius:0;box-shadow:0 4px 12px rgba(0,0,0,0.22);display:none;scrollbar-width:thin}}
+/* quest 下拉 — 与豆腐块齐宽、无缝隙，最大高度=AI面板2/3，层级仅次于qoast */.quest-drop{position:absolute;top:calc(100% + 5px);left:0;width:100%;z-index:99990;max-height:66.67vh;overflow-y:auto;overflow-x:hidden;background:#ebe3ca;border:none;border-radius:0;box-shadow:0 4px 12px rgba(0,0,0,0.22);display:none}
 [data-theme="dark"] .quest-drop{background:#211f1c;box-shadow:0 4px 12px rgba(0,0,0,0.55)}
-.quest-drop::-webkit-scrollbar{width:4px}
-.quest-drop::-webkit-scrollbar-thumb{background:var(--base01);border-radius:2px}
-[data-theme="dark"] .quest-drop::-webkit-scrollbar-thumb{background:#5a5550}
 .quest-drop.show{display:block}
 /* 下拉首行：1/3 + 加号 | 2/3 搜索框 */
 .quest-drop-head{display:flex;align-items:stretch;border-bottom:1px solid var(--border-color);position:sticky;top:0;background:#ebe3ca;z-index:100}
@@ -268,7 +305,7 @@ a.msg-err-recovery-light{display:inline-block;font-size:18px;color:#fff;animatio
 .msg-flow-guide-body{padding-left:0;font-size:13px;line-height:1.5;word-break:break-word}
 .msg-flow-icon{flex-shrink:0;font-size:13px}
 .msg-flow-tools{display:flex;align-items:center;gap:6px;padding:4px 10px;margin:4px 0;border-left:3px solid var(--blue);background:rgba(38,139,210,0.06);border-radius:0 4px 4px 0;font-family:ui-monospace,monospace;font-size:11px;color:var(--blue)}
-.msg-flow-tool-result{padding:3px 10px;margin:2px 0 2px 12px;border-left:2px solid var(--base01);font-family:ui-monospace,monospace;font-size:10px;color:var(--base01);max-height:80px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+.msg-flow-tool-result{padding:3px 10px;margin:2px 0 2px 12px;border-left:2px solid var(--base01);font-family:ui-monospace,monospace;font-size:10px;color:var(--base01);max-height:80px;overflow-y:auto;overflow-x:hidden;white-space:pre-wrap;word-break:break-all}
 .msg-flow-tool-result code{font-size:10px}
 .msg-flow-system{padding:4px 10px;margin:4px 0;font-size:10px;color:var(--base01);font-style:italic;opacity:0.7}
 .msg-flow-partial{padding:6px 10px;margin:4px 0;font-size:12px;color:var(--text-primary);opacity:0.85}
@@ -291,8 +328,6 @@ a.msg-err-recovery-light{display:inline-block;font-size:18px;color:#fff;animatio
 [data-theme="dark"] #bullet-btn img{filter:invert(1)}
 
 #image-strip{display:none;overflow-x:hidden;flex-wrap:wrap;padding:4px 0;gap:6px}
-#image-strip::-webkit-scrollbar{height:4px}
-#image-strip::-webkit-scrollbar-thumb{background:var(--base01);border-radius:2px}
 .img-thumb-wrap{display:inline-flex;flex-direction:column;align-items:center;position:relative;width:96px;height:96px;border-radius:4px;overflow:hidden;border:1px solid var(--border-color);margin-right:6px;vertical-align:top}
 .img-thumb-wrap img{width:100%;height:100%;object-fit:cover;border-radius:3px}
 .img-thumb-num{position:absolute;top:2px;left:2px;background:rgba(0,0,0,0.75);color:#fff;font-size:10px;font-weight:bold;padding:2px 6px;border-radius:3px;user-select:none;z-index:2}
@@ -310,7 +345,7 @@ a.msg-err-recovery-light{display:inline-block;font-size:18px;color:#fff;animatio
 #newline-btn{position:absolute;right:18px;top:-20px;z-index:10;width:24px;height:18px;border:1px solid var(--border-color);border-radius:4px;background:rgba(128,128,128,0.12);color:var(--text-primary);font-size:14px;font-weight:700;line-height:16px;text-align:center;cursor:pointer;opacity:0.35;transition:opacity 0.15s;user-select:none;padding:0;font-family:monospace}
 #newline-btn:hover{opacity:0.75;background:rgba(128,128,128,0.20)}
 #newline-btn:active{opacity:0.9;background:var(--base2)}
-#input{display:block;width:100%;background:var(--card-bg);color:var(--text-primary);border:none;border-radius:0;padding:5px 10px;font-size:13px;font-family:inherit;min-height:33px;max-height:333px;overflow-y:hidden;overflow-x:hidden;resize:none;outline:none;scrollbar-width:thin;scrollbar-color:var(--base01) transparent;line-height:1.5}#input::-webkit-scrollbar{width:3px}#input::-webkit-scrollbar-track{background:transparent;border:none}#input::-webkit-scrollbar-thumb{background:var(--base01);border-radius:0}#input::-webkit-scrollbar-button{display:none}#input::-webkit-scrollbar-corner{background:transparent}
+#input{display:block;width:100%;background:var(--card-bg);color:var(--text-primary);border:none;border-radius:0;padding:5px 10px;font-size:13px;font-family:inherit;min-height:33px;max-height:333px;overflow-y:hidden;overflow-x:hidden;resize:none;outline:none;line-height:1.5}
 /* ── 键入进度条：悬浮在按钮行上方，从面板左边界延伸到子弹按钮 ── */
 #input-progress{height:0;overflow:visible;pointer-events:none;position:relative;margin-left:-8px;margin-right:-8px}
 #input-progress-fill{position:absolute;top:3px;left:0;height:2px;width:0;background:#ff3d00;transition:width 0.12s ease;will-change:width}
@@ -372,17 +407,12 @@ a.msg-err-recovery-light{display:inline-block;font-size:18px;color:#fff;animatio
 .bk-tier{display:inline-flex;align-items:center;justify-content:center;background:#859900;color:#fdf6e3;font-weight:700;font-size:10px;padding:0 4px;border-radius:2px;flex-shrink:0;line-height:16px;min-width:20px}
 .bk-text{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-primary)}
 .bk-img-count{flex-shrink:0;font-size:10px;color:var(--base01)}
-/* 行2：图片缩略图 */
-.bk-row2{display:flex;gap:3px;margin-top:4px;flex-wrap:nowrap;overflow-x:auto}
+/* 行2：图片缩略图（恒换行零横条——与输入框图片条 #image-strip 同款；禁改回横滚） */
+.bk-row2{display:flex;gap:3px;margin-top:4px;flex-wrap:wrap}
 .bk-thumb{width:28px;height:28px;object-fit:cover;border-radius:2px;border:1px solid var(--border-color);flex-shrink:0}
 /* 展开编辑区 */
 .bk-edit{margin-top:6px}
-.bk-ta{width:100%;min-height:36px;font-size:12px;padding:6px 8px;border:1px solid var(--border-color);border-radius:3px;background:var(--background-color);color:var(--text-primary);resize:none;outline:none;margin-bottom:4px;line-height:1.5;overflow-y:hidden;scrollbar-width:thin;scrollbar-color:var(--base01) transparent;font-family:inherit}
-.bk-ta::-webkit-scrollbar{width:3px}
-.bk-ta::-webkit-scrollbar-track{background:transparent;border:none}
-.bk-ta::-webkit-scrollbar-thumb{background:var(--base01);border-radius:0}
-.bk-ta::-webkit-scrollbar-button{display:none}
-.bk-ta::-webkit-scrollbar-corner{background:transparent}
+.bk-ta{width:100%;min-height:36px;font-size:12px;padding:6px 8px;border:1px solid var(--border-color);border-radius:3px;background:var(--background-color);color:var(--text-primary);resize:none;outline:none;margin-bottom:4px;line-height:1.5;overflow-y:hidden;font-family:inherit}
 .bk-ta:focus{outline:1px solid var(--blue)}
 .bk-actions{display:flex;gap:16px;justify-content:flex-end}
 .bk-actions button{padding:2px 10px;font-size:11px;border:1px solid var(--border-color);border-radius:3px;background:var(--card-bg);color:var(--text-primary);cursor:pointer}
@@ -415,10 +445,8 @@ a.msg-err-recovery-light{display:inline-block;font-size:18px;color:#fff;animatio
 .ctx-bd-total{border-top:1px solid var(--border-color);margin-top:4px;padding-top:4px;display:flex;justify-content:space-between;font-weight:600;font-size:11px;color:var(--text-primary)}
 .ctx-bd-free{color:var(--green);font-weight:400}
 :root{--cyan:#2aa198} .dark .ctx-bd-num{--cyan:#2aa198}
-/* ── 超长消息：可滚动容器，不截断不遮罩 ── */
-.msg-long{max-height:360px;overflow-y:auto;scrollbar-width:thin}
-.msg-long::-webkit-scrollbar{width:6px}
-.msg-long::-webkit-scrollbar-thumb{background:var(--base01);border-radius:3px}
+/* ── 超长消息：可滚动容器，不截断不遮罩（纵向专属；横向恒禁——超长链接/长词一律折行）── */
+.msg-long{max-height:360px;overflow-y:auto;overflow-x:hidden}
 /* ── 滚动条标记叠层 + 刻度数字 —— 宽标尺左展，炫彩发光 ── */
 #scroll-mark-layer{position:absolute;right:-4px;top:12px;bottom:12px;width:16px;pointer-events:auto;z-index:22}
 #scroll-mark-layer .sml-mark{position:absolute;right:-4px;width:16px;height:3px;border-radius:2px;opacity:0.95;box-shadow:0 0 6px 2px currentColor,0 0 12px 4px currentColor;animation:sml-glow 1.8s ease-in-out infinite alternate}

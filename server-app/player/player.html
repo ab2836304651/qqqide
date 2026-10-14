@@ -313,7 +313,7 @@
         isTx: !!p.isTx, play: p.paused !== true,
         time: (typeof p.time === 'number') ? p.time : 0,
         rate: p.rate, loop: p.loop, shuffle: p.shuffle, follow: p.follow,
-        volume: p.volume, muted: p.muted
+        volume: p.volume, muted: p.muted, timerEndAt: p.timerEndAt, timerMode: p.timerMode
       });
     },
     // 返回值透传（宿主跨进程裁决 {ok, via}——'roam' 已由 IDE 承接；失败如实浮读，2026-10-03）
@@ -324,6 +324,18 @@
     // 定位可达性（'roam'|'fs'——截图提示按钮文案依据；旧宿主无此通道 → null 回落 Roam 文案）
     revealMode: function () { try { if (bridge && bridge.player && bridge.player.revealMode) { return bridge.player.revealMode(); } } catch (_) { } return null; },
     getLastDir: function () { return ''; },
+    // ★ 定时关闭（v24/v25）：endAt + 模式（pause/shutdown）落 sessionStorage——跨类型重建（同页重挂载）/页面重载后剩余计时与模式继续；0 = 清除
+    onTimer: function (endAt, mode) {
+      try {
+        if (endAt && endAt > Date.now()) {
+          sessionStorage.setItem('qqqide.player.timerEnd', String(endAt));
+          sessionStorage.setItem('qqqide.player.timerMode', (mode === 'shutdown') ? 'shutdown' : 'pause');
+        } else {
+          sessionStorage.removeItem('qqqide.player.timerEnd');
+          sessionStorage.removeItem('qqqide.player.timerMode');
+        }
+      } catch (_) { }
+    },
     onPlayState: function () { },
     onState: function () { _save(false); },
     savePref: function (k, v) {
@@ -348,6 +360,23 @@
     try { bodyEl.innerHTML = ''; } catch (_) { }
     cur.list = list; cur.index = idx;
     _showEmpty(false);
+    // ★ 定时关闭（v24/v25）：剩余计时 + 模式读取——载荷（跨类型重建）优先，回落 sessionStorage（页面重载）；过期即清
+    var _tmrKeep = (typeof o.timerEndAt === 'number' && o.timerEndAt > Date.now() + 300) ? o.timerEndAt : 0;
+    if (!_tmrKeep) {
+      try {
+        var _tv = parseInt(sessionStorage.getItem('qqqide.player.timerEnd') || '0', 10) || 0;
+        if (_tv > Date.now() + 300) { _tmrKeep = _tv; }
+        else if (_tv) { sessionStorage.removeItem('qqqide.player.timerEnd'); sessionStorage.removeItem('qqqide.player.timerMode'); }
+      } catch (_) { }
+    }
+    var _tmrModeKeep = '';
+    if (_tmrKeep) {
+      _tmrModeKeep = (o.timerMode === 'shutdown') ? 'shutdown' : '';
+      if (!_tmrModeKeep) {
+        try { if (sessionStorage.getItem('qqqide.player.timerMode') === 'shutdown') { _tmrModeKeep = 'shutdown'; } } catch (_) { }
+      }
+      if (!_tmrModeKeep) { _tmrModeKeep = 'pause'; }   // 缺省回「到点暂停」（存量计时/意外缺字段恒安全档）
+    }
     var item = list[idx] || {};
     eng = ME ? ME.mount({
       container: bodyEl, rootEl: rootEl,
@@ -365,7 +394,9 @@
         loop: o.loop, shuffle: o.shuffle, follow: o.follow,
         volume: (typeof o.volume === 'number') ? o.volume : undefined,
         muted: (typeof o.muted === 'boolean') ? o.muted : undefined,
-        dockSide: o.dockSide
+        dockSide: o.dockSide,
+        timerEndAt: _tmrKeep || undefined,
+        timerMode: _tmrModeKeep || undefined
       }
     }) : null;
     // 标题立即对齐当前轨（编队标题联动；后续 _save 持续校正）

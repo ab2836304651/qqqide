@@ -261,7 +261,6 @@
             "removeTitle": "Eliminar elemento",
             "removeConfirm": "¿Estás seguro de eliminar «{n}» del visor de IA?",
             "removeBtn": "Eliminar",
-            "removeAsk": "¿Eliminar «{n}»?",
             "openElsewhere": "⚠️ Este elemento ya está abierto como carpeta principal en otra ventana",
             "clearedBusy": "⚠️ La carpeta principal está siendo utilizada por otra ventana. El visor de IA se ha limpiado para mostrar una ventana vacía.",
             "filterPh": "Filtrar...",
@@ -427,6 +426,10 @@
         "timelineNoRoot": "No se puede determinar el directorio raíz del proyecto para este archivo; la línea de tiempo no está disponible",
         "timelineOpenFail": "Error al abrir la ventana de línea de tiempo. Inténtalo de nuevo más tarde.",
         "minimap": "Minimapa",
+        "run": "Ejecutar",
+        "runNoInterp": "El intérprete integrado no está listo (faltan componentes)",
+        "runNoTerm": "No se puede abrir la terminal",
+        "runFail": "Error al ejecutar",
         "tabs": {
             "close": "Cerrar pestaña",
             "closeOthers": "Cerrar otras",
@@ -838,6 +841,8 @@
             "showKey": "Mostrar/Ocultar",
             "model": "Nombre del modelo",
             "modelPh": "Nombre del modelo en la documentación del proveedor",
+            "maxTokens": "Tokens de salida máx. (opcional)",
+            "maxTokensPh": "Vacío = valor predeterminado del proveedor (recomendado)",
             "fetchModels": "Obtener lista de modelos",
             "probeLocal": "Detectar modelos locales",
             "needBase": "Por favor, introduce primero la dirección del endpoint",
@@ -924,7 +929,8 @@
         "waitNew": "La IA aún no ha respondido a la tarea actual, por favor crea una nueva más tarde",
         "recoverPrefix": "Reconexión de red restaurada. Registro de interrupción anterior del hilo:",
         "recoverSuffix": "| Por favor, continúa completando la tarea original basándote en el contexto completo de la conversación.",
-        "retryExhausted": "Se reintentó 3 veces sin éxito, puede ser debido al agotamiento de la cuota/facturación o a un fallo del servidor, por favor inténtalo de nuevo más tarde",
+        "retryExhausted": "Se reintentó 3 veces sin éxito. Inténtelo más tarde; si el problema persiste, verifique la red, la cuenta o la configuración del proveedor.",
+        "retryExhaustedDetail": "Se reintentó 3 veces sin éxito — último error: {msg}",
         "pathIncompatible": "La ruta contiene caracteres incompatibles, no se puede adjuntar",
         "bulletTrunc": "\n\n... [Intermedio truncado, original {0}KB] ...\n\n",
         "exhaustedMsg": "⚠ Se ha alcanzado el número máximo de llamadas a herramientas (200), pero la IA no pudo generar una respuesta final. El contexto de la conversación se ha conservado, puedes continuar preguntando.",
@@ -1021,7 +1027,8 @@
             "intDone": "── Ctrl+C · {0} procesos terminados ──",
             "intIdle": "── Ctrl+C · No hay comandos en ejecución ──",
             "intSig": "── Ctrl+C · Señal de interrupción enviada ──",
-            "intRestart": "── Ctrl+C · La actualización del shell requiere reiniciar la instancia para aplicar cambios ──"
+            "intRestart": "── Ctrl+C · La actualización del shell requiere reiniciar la instancia para aplicar cambios ──",
+            "dropNoPath": "── Se omiten {0} elementos al arrastrar (sin ruta local) ──"
         },
         "git": {
             "refresh": "Actualizar",
@@ -1288,7 +1295,9 @@
             "intFail": "[Fallo de Interrupt] {0}",
             "terminated": "Terminado · Puedes reiniciar con Restart",
             "termLine": "── Sesión terminada (usa Restart para reiniciar) ──",
-            "deadHint": "En estado terminado · Usa Restart para reiniciar"
+            "deadHint": "En estado terminado · Usa Restart para reiniciar",
+            "dropNoPath": "── Se omiten {0} elementos al arrastrar (sin ruta local) ──",
+            "dropIdle": "Sesión no lista · Arrastre no insertado"
         },
         "dsecret": {
             "targetProject": "Proyecto objetivo",
@@ -2230,6 +2239,12 @@
             "saveConsole": "Guardar registros de la consola",
             "logFile": "Archivo de registro",
             "saveFile": "Guardar archivo"
+        },
+        "browserHost": {
+            "title": "qd (qqqide) Navegador",
+            "startHosted": "Esta ventana la gestiona qqqide: la IA opera páginas web a través de ella.",
+            "startMonitor": "Mientras se ejecuta una tarea, aquí puedes ver el progreso en vivo; cuando se te necesite (p. ej. para iniciar sesión), la IA esperará aquí.",
+            "startHint": "Cerrar esta ventana sale del navegador; la sesión se conserva para la próxima vez."
         },
         "browser": {
             "openFailTitle": "No se pudo abrir el navegador automáticamente — qd (qqqide)",

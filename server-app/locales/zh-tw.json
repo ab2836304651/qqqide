@@ -261,7 +261,6 @@
             "removeTitle": "移除項目",
             "removeConfirm": "確定要從 AI 視口移除「{n}」嗎？",
             "removeBtn": "移除",
-            "removeAsk": "移除「{n}」？",
             "openElsewhere": "⚠️ 該專案已在另一個視窗作為主資料夾開啟",
             "clearedBusy": "⚠️ 主資料夾已被另一視窗佔用，AI 視窗已清空為乾淨視窗",
             "filterPh": "篩選...",
@@ -427,6 +426,10 @@
         "timelineNoRoot": "無法確定該檔案的專案根目錄，時間軸不可用",
         "timelineOpenFail": "時間軸視窗開啟失敗，請稍後再試",
         "minimap": "縮圖導覽",
+        "run": "執行",
+        "runNoInterp": "內建直譯器尚未就緒（缺少元件）",
+        "runNoTerm": "無法開啟終端機",
+        "runFail": "執行失敗",
         "tabs": {
             "close": "關閉分頁",
             "closeOthers": "關閉其他分頁",
@@ -838,6 +841,8 @@
             "showKey": "顯示/隱藏",
             "model": "模型名稱",
             "modelPh": "服務商文件中的模型名稱",
+            "maxTokens": "最大輸出 tokens（可選）",
+            "maxTokensPh": "留空 = 使用服務商預設（推薦）",
             "fetchModels": "取得模型清單",
             "probeLocal": "偵測本機模型",
             "needBase": "請先填寫介面位址",
@@ -924,7 +929,8 @@
         "waitNew": "當前任務 AI 尚未回覆，請稍後再新建",
         "recoverPrefix": "網路恢復重連。此前樓層中斷記錄：",
         "recoverSuffix": "｜請基於完整對話脈絡繼續完成原始任務。",
-        "retryExhausted": "已重試 3 次仍未成功，可能是計費/配額耗盡或伺服器故障，請稍後再試",
+        "retryExhausted": "已重試 3 次仍未成功，請稍後再試；若持續失敗，請檢查網路、帳戶或服務供應商設定",
+        "retryExhaustedDetail": "已重試 3 次仍未成功 — 最近錯誤：{msg}",
         "pathIncompatible": "路徑包含不相容字元，無法附加",
         "bulletTrunc": "\n\n... [中間已截斷, 原始 {0}KB] ...\n\n",
         "exhaustedMsg": "⚠ 已達到最大工具呼叫次數 (200)，但 AI 未能生成最終回答。對話脈絡已保留，你可以繼續提問。",
@@ -1021,7 +1027,8 @@
             "intDone": "── Ctrl+C · 已終止 {0} 個行程 ──",
             "intIdle": "── Ctrl+C · 無執行中的命令 ──",
             "intSig": "── Ctrl+C · 已發送中斷訊號 ──",
-            "intRestart": "── Ctrl+C · Shell 升級需重啟執行個體方可生效 ──"
+            "intRestart": "── Ctrl+C · Shell 升級需重啟執行個體方可生效 ──",
+            "dropNoPath": "── 拖入忽略 {0} 項（無本機路徑）──"
         },
         "git": {
             "refresh": "重新整理",
@@ -1288,7 +1295,9 @@
             "intFail": "[Interrupt 失敗] {0}",
             "terminated": "已終止 · 可點擊 Restart 重新啟動",
             "termLine": "── 工作階段已終止（Restart 可重啟）──",
-            "deadHint": "已處於終止狀態 · Restart 可重啟"
+            "deadHint": "已處於終止狀態 · Restart 可重啟",
+            "dropNoPath": "── 拖入忽略 {0} 項（無本機路徑）──",
+            "dropIdle": "工作階段未就緒 · 拖入未插入"
         },
         "dsecret": {
             "targetProject": "目標專案",
@@ -2230,6 +2239,12 @@
             "saveConsole": "儲存主控台記錄",
             "logFile": "記錄檔",
             "saveFile": "儲存檔案"
+        },
+        "browserHost": {
+            "title": "qd (qqqide) 瀏覽器",
+            "startHosted": "此視窗由 qqqide 託管：AI 透過它執行網頁操作。",
+            "startMonitor": "任務進行時可在此視窗查看即時進度；需要你時（如掃碼登入），AI 會在此等待。",
+            "startHint": "關閉此視窗即退出；登入狀態會保留到下次使用。"
         },
         "browser": {
             "openFailTitle": "無法自動開啟瀏覽器 — qd (qqqide)",

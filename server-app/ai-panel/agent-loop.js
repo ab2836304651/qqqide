@@ -967,13 +967,16 @@ var AgentLoop = (function () {
                     self._lastCostDisplay = costGe < 0.001 ? '<0.001' : costGe.toFixed(4);
                     onCost(self._lastCostDisplay, self.totalCostGe, (self._floorHadBilling && self._floorCostWge === 0));
                     // ★ 最终回复也需更新时钟 GE 显示（之前仅 tool_calls 路径有）
-                    var _aiDivF = self._activeAiDiv;
-                    if (_aiDivF && _aiDivF._clockCost) {
-                        _aiDivF._clockCost._rawGe = costGe.toFixed(4);
-                        _aiDivF._clockCost.textContent = costGe.toFixed(2) + ' ge' + ((self._floorHadBilling && self._floorCostWge === 0) ? ' Free' : '') + (self._floorByokUsed ? ' BYOK' : '');
-                        _aiDivF._clockCost._houses = self._houses;
-                        _aiDivF._clockCost._floorNum = self._currentFloorNum;
-                        _aiDivF._clockCost._passby = { questId: self._questId, floorNum: self._currentFloorNum, houses: (self._passbyBaseHouses || 0) + (self._houses ? self._houses.length : 0), tokens: (self._passbyBaseTokens || 0) + (typeof _computeFloorTokens === 'function' ? _computeFloorTokens(self) : 0), wge: (self._passbyBaseWge || 0) + (self._floorCostWge || 0), drift: self._serverDrift || 0, city: self._serverCity || '' };
+                    // ★ 多目标全集（详 panel-clock「楼层时钟多目标集」）：活动指针可能被切 quest/跨面板事件夺走——恒遍历全副本
+                    var _costElsF = (typeof _floorClockElsOf === 'function') ? _floorClockElsOf(self) : (self._activeAiDiv ? [self._activeAiDiv] : []);
+                    for (var _cf = 0; _cf < _costElsF.length; _cf++) {
+                        var _cElF = _costElsF[_cf] && _costElsF[_cf]._clockCost;
+                        if (!_cElF) continue;
+                        _cElF._rawGe = costGe.toFixed(4);
+                        _cElF.textContent = costGe.toFixed(2) + ' ge' + ((self._floorHadBilling && self._floorCostWge === 0) ? ' Free' : '') + (self._floorByokUsed ? ' BYOK' : '');
+                        _cElF._houses = self._houses;
+                        _cElF._floorNum = self._currentFloorNum;
+                        _cElF._passby = { questId: self._questId, floorNum: self._currentFloorNum, houses: (self._passbyBaseHouses || 0) + (self._houses ? self._houses.length : 0), tokens: (self._passbyBaseTokens || 0) + (typeof _computeFloorTokens === 'function' ? _computeFloorTokens(self) : 0), wge: (self._passbyBaseWge || 0) + (self._floorCostWge || 0), drift: self._serverDrift || 0, city: self._serverCity || '' };
                     }
                     if (self._billingDebug) { _logBillingSummary(self); }
                     self._floorCompletedCleanly = true;  // ★ 看门狗：AI 正常回复
@@ -1017,19 +1020,24 @@ var AgentLoop = (function () {
                     }
                     self._houses.push({ index: self._houseIndex, type: self._compressFloor ? 'f3' : 'tools', tools: _tools, toolResults: [], ts: new Date().toISOString(), ms: Date.now() - _hStart, reasoning: response.reasoning_content || '', wgeCost: _bill2 ? _bill2.wgeCost : 0, model: _bill2 ? _bill2.model : '', cacheHitRate: _bill2 ? _bill2.cacheHitRate : -1, usage: _bill2 ? _bill2.usage : null, billingSeq: _bill2 ? _bill2.seq : 0, billingRequestId: _bill2 ? _bill2.requestId : '', byok: _bill2 && _bill2.byokRoute ? _bill2.byokRoute : '', cacheDiag: _cd2 || undefined, tier: self._lastTier ? self._lastTier.label : '' });
                     // ★ per-house ge display: 每间 house 即时更新右下角费用时更新右下角费用（纯 DOM，零服务器压力）
-                    var _aiDiv5 = self._activeAiDiv;
-                    if (_aiDiv5 && _aiDiv5._clockCost) {
-                        var _rawGe5 = self._floorCostWge / 10000;
-                        var _displayGe5 = typeof _formatGeDisplay === 'function' ? _formatGeDisplay(_rawGe5) : _rawGe5.toFixed(2);
-                        _aiDiv5._clockCost._rawGe = typeof _formatGeRaw === 'function' ? _formatGeRaw(_rawGe5) : _rawGe5.toFixed(4);
-                        _aiDiv5._clockCost.textContent = _displayGe5 + ' ge' + ((self._floorHadBilling && self._floorCostWge === 0) ? ' Free' : '') + (self._floorByokUsed ? ' BYOK' : '');
-                        _aiDiv5._clockCost._houses = self._houses;
-                        _aiDiv5._clockCost._floorNum = self._currentFloorNum;
-                        _aiDiv5._clockCost._passby = { questId: self._questId, floorNum: self._currentFloorNum, houses: (self._passbyBaseHouses || 0) + (self._houses ? self._houses.length : 0), tokens: (self._passbyBaseTokens || 0) + (typeof _computeFloorTokens === 'function' ? _computeFloorTokens(self) : 0), wge: (self._passbyBaseWge || 0) + (self._floorCostWge || 0), drift: self._serverDrift || 0, city: self._serverCity || '' };
+                    // ★ 多目标全集（详 panel-clock「楼层时钟多目标集」）：每房费用恒遍历全副本
+                    var _rawGe5 = self._floorCostWge / 10000;
+                    var _displayGe5 = typeof _formatGeDisplay === 'function' ? _formatGeDisplay(_rawGe5) : _rawGe5.toFixed(2);
+                    var _rawGe5s = typeof _formatGeRaw === 'function' ? _formatGeRaw(_rawGe5) : _rawGe5.toFixed(4);
+                    var _costTxt5 = _displayGe5 + ' ge' + ((self._floorHadBilling && self._floorCostWge === 0) ? ' Free' : '') + (self._floorByokUsed ? ' BYOK' : '');
+                    var _costEls5 = (typeof _floorClockElsOf === 'function') ? _floorClockElsOf(self) : (self._activeAiDiv ? [self._activeAiDiv] : []);
+                    for (var _c5 = 0; _c5 < _costEls5.length; _c5++) {
+                        var _cEl5 = _costEls5[_c5] && _costEls5[_c5]._clockCost;
+                        if (!_cEl5) continue;
+                        _cEl5._rawGe = _rawGe5s;
+                        _cEl5.textContent = _costTxt5;
+                        _cEl5._houses = self._houses;
+                        _cEl5._floorNum = self._currentFloorNum;
+                        _cEl5._passby = { questId: self._questId, floorNum: self._currentFloorNum, houses: (self._passbyBaseHouses || 0) + (self._houses ? self._houses.length : 0), tokens: (self._passbyBaseTokens || 0) + (typeof _computeFloorTokens === 'function' ? _computeFloorTokens(self) : 0), wge: (self._passbyBaseWge || 0) + (self._floorCostWge || 0), drift: self._serverDrift || 0, city: self._serverCity || '' };
                         if ((self._floorHadBilling && self._floorCostWge === 0)) {
-                            _aiDiv5._clockCost.style.color = '#859900';
+                            _cEl5.style.color = '#859900';
                         } else {
-                            _aiDiv5._clockCost.style.color = '';
+                            _cEl5.style.color = '';
                         }
                     }
                     // ★ 2026-08-11: 文本工具回生（格式 E）的提示注入 content；原生 tool_calls 时 content = 正文
@@ -1143,13 +1151,16 @@ var AgentLoop = (function () {
                     self.totalCostGe += finalCostGe;
                     self._lastCostDisplay = finalCostGe < 0.001 ? '<0.001' : finalCostGe.toFixed(4);
                     onCost(self._lastCostDisplay, self.totalCostGe, (self._floorHadBilling && self._floorCostWge === 0));
-                    var _aiDivF2 = self._activeAiDiv;
-                    if (_aiDivF2 && _aiDivF2._clockCost) {
-                        _aiDivF2._clockCost._rawGe = finalCostGe.toFixed(4);
-                        _aiDivF2._clockCost.textContent = finalCostGe.toFixed(2) + ' ge' + ((self._floorHadBilling && self._floorCostWge === 0) ? ' Free' : '') + (self._floorByokUsed ? ' BYOK' : '');
-                        _aiDivF2._clockCost._houses = self._houses;
-                        _aiDivF2._clockCost._floorNum = self._currentFloorNum;
-                        _aiDivF2._clockCost._passby = { questId: self._questId, floorNum: self._currentFloorNum, houses: (self._passbyBaseHouses || 0) + (self._houses ? self._houses.length : 0), tokens: (self._passbyBaseTokens || 0) + (typeof _computeFloorTokens === 'function' ? _computeFloorTokens(self) : 0), wge: (self._passbyBaseWge || 0) + (self._floorCostWge || 0), drift: self._serverDrift || 0, city: self._serverCity || '' };
+                    // ★ 多目标全集（详 panel-clock「楼层时钟多目标集」）：强制收尾费用恒遍历全副本
+                    var _costElsF2 = (typeof _floorClockElsOf === 'function') ? _floorClockElsOf(self) : (self._activeAiDiv ? [self._activeAiDiv] : []);
+                    for (var _cf2 = 0; _cf2 < _costElsF2.length; _cf2++) {
+                        var _cElF2 = _costElsF2[_cf2] && _costElsF2[_cf2]._clockCost;
+                        if (!_cElF2) continue;
+                        _cElF2._rawGe = finalCostGe.toFixed(4);
+                        _cElF2.textContent = finalCostGe.toFixed(2) + ' ge' + ((self._floorHadBilling && self._floorCostWge === 0) ? ' Free' : '') + (self._floorByokUsed ? ' BYOK' : '');
+                        _cElF2._houses = self._houses;
+                        _cElF2._floorNum = self._currentFloorNum;
+                        _cElF2._passby = { questId: self._questId, floorNum: self._currentFloorNum, houses: (self._passbyBaseHouses || 0) + (self._houses ? self._houses.length : 0), tokens: (self._passbyBaseTokens || 0) + (typeof _computeFloorTokens === 'function' ? _computeFloorTokens(self) : 0), wge: (self._passbyBaseWge || 0) + (self._floorCostWge || 0), drift: self._serverDrift || 0, city: self._serverCity || '' };
                     }
                     self._floorCompletedCleanly = true;  // ★ 看门狗：强制回答成功
                     await onDone(finalResp.content, self._floorTiming);

@@ -522,8 +522,13 @@ document.getElementById('addressCopyBtn').addEventListener('click', function() {
 });
 
 // ---- Navigate ----
+// ★ 导航意图纪年（防旧异步回填 / 迟到拉回）：用户每次导航意图 ++（navigateTo 入口 + .lnk 解析起手）。
+//   异步续段（列表加载 / .lnk 解析 / Backspace 来源校验 / Desktop 解析）落地前比对——纪年已变 =
+//   期间已有更新的用户导航 → 旧续段一律放弃（绝不用旧结果覆盖新目录，也绝不把用户拉回旧目标）。
+var _navEpoch = 0;
 function navigateTo(p, opts) {
 	opts = opts || {};
+	_navEpoch++;
 	// ★ 正常导航时清除 lnkJumpFromPath（lnk 跳转在调用后重新设置）
 	if (!opts.keepLnkJump) lnkJumpFromPath = null;
 	currentPath = p;
@@ -1168,6 +1173,10 @@ function _sortEntries(entries, so, fot) {
 
 // ---- Load file list ----
 var _lastRenderSig = '';
+// ★ 在途加载令牌（防旧目录回填）：每次调用取号；await 返回后若已非最新号 → 丢弃一切写入。
+//   场景：大目录列表慢，用户已点开下一个路径 → 旧响应后到时绝不能刷回旧目录内容
+//   （否则出现 地址框=新路径、主资源区=旧文件 的错位）。
+var _loadListSeq = 0;
 // ★ 2026-08-09 防幻影闪烁: diff 签名 key — 只含可见字段(name+type+sz 动态列), 后台写文件不触发重建
 function _szSigKey(e) {
 	if (szMode === 'size') return String(e.size || 0);
@@ -1176,6 +1185,8 @@ function _szSigKey(e) {
 	return '';
 }
 async function loadFileList(p) {
+	// ★ 取号（在途令牌）：本调用被更新的调用顶替后 → 渲染/报错写入一律放弃
+	var _seq = ++_loadListSeq;
 	// ★ 重置主进程 watcher 节流窗 — 自身操作/刚刷新后 6s 内 watcher 事件【推迟不丢弃】(q3 markWatcherRefreshTime 同语义; 旧丢弃式会吞外部变更), 防双刷
 	rpc('roam.watchMark').catch(function(){});
 	// ★ q3 对齐: Space 强制尺寸仅会话内有效 — 切换目录或 SCM 模式 → 立即丢失强制
@@ -1202,6 +1213,7 @@ async function loadFileList(p) {
 		}
 
 		var entries = await bridge.fs.list(p);
+		if (_seq !== _loadListSeq) return; // ★ 迟到响应丢弃：更新的加载已接管（防旧目录刷回新目录之上）
 		_sortEntries(entries, sortBy, filesOnTop);
 		// ★ 2026-08-09 防幻影闪烁: 先构建 + diff 签名 → 无变化零重建零闪烁;
 		//   有变化才原子换入 (replaceChildren 单帧换入, 无 innerHTML='' 空白帧)
@@ -1222,6 +1234,7 @@ async function loadFileList(p) {
 		lastSelectedItem = null;
 		fileList.replaceChildren(frag); // ★ 原子换入，单次 layout，无空白帧
 	} catch(err) {
+		if (_seq !== _loadListSeq) return; // ★ 迟到错误同样丢弃（防旧目录红字盖新目录内容）
 		fileList.innerHTML = '<div style="padding:17px;color:var(--red);">' + escHtml(String(err)) + '</div>';
 	}
 }
@@ -1745,13 +1758,19 @@ function performOpenAction(item) {
 		// .lnk 快捷方式：照抄 q3 逻辑——解析目标，是文件夹（且存在）则导航，否则交给系统
 		var srcDir = currentPath;
 		var lnkPath = item.path;
+		var _lnkEpoch = ++_navEpoch;   // ★ 解析起手即记导航意图（连点两个 .lnk / 期间改点别的目录 → 旧解析整体放弃）
 		resolveLnkTarget(lnkPath).then(function(target) {
+			if (_lnkEpoch !== _navEpoch) return;   // ★ 迟到解析：期间已有更新的用户导航 → 不再拉回
 			if (target) {
 				// q3 关键判断：目标必须存在且是文件夹才在 roam 内导航
 				bridge.fs.stat(target).then(function(st) {
+					if (_lnkEpoch !== _navEpoch) return;   // ★ stat 等待期间同上
 					if (st && st.isDir) { navigateTo(target); lnkJumpFromPath = srcDir; }
 					else { bridge.shell.openPath(lnkPath).catch(function(){}); }
-				}).catch(function() { bridge.shell.openPath(lnkPath).catch(function(){}); });
+				}).catch(function() {
+					if (_lnkEpoch !== _navEpoch) return;
+					bridge.shell.openPath(lnkPath).catch(function(){});
+				});
 			} else {
 				bridge.shell.openPath(lnkPath).catch(function(){});
 			}

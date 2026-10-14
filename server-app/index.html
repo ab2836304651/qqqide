@@ -269,6 +269,9 @@ var _orig={};
 
 <script src="core/editor-breadcrumb.js"></script>
 <script src="core/editor.js"></script>
+<!-- 运行机器（编辑器右键「运行」唯一机：内置解释器执行当前文件 → kmd 自动执行；引用规则复用 core/term-drop.js 唯一源） -->
+<script src="core/term-drop.js"></script>
+<script src="core/run-machine.js"></script>
 <!-- Markdown 实时预览机器（编辑器伴生侧栏视图；渲染机 core/md-render.js 与 AI 面板共享） -->
 <script src="core/md-preview.js"></script>
 <!-- 服务端甲壳元信息（背包估算动态源，goods iframe 经 parent 读取） -->
@@ -315,7 +318,7 @@ var _orig={};
 <script src="core/shell.js"></script>
 <script>
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./service-worker.js?v=343')
+    navigator.serviceWorker.register('./service-worker.js?v=344')
       .then(function (reg) {
         // ★ 新 SW 已就绪（waiting）→ 立即激活（service-worker 收 skipWaiting 后 activate + claim）
     //   2026-08-23 删除 controllerchange 自动 reload：该事件在 SW 首次接管页面时同样触发

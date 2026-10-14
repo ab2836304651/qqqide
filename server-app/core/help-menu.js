@@ -1,18 +1,21 @@
 // Copyright (C) 2025-2026 Sichuan Dream Technology Co., Ltd. All Rights Reserved.
 
 // ============================================================================
-// help-menu.js — 菜单行2 help 按钮（inbox 右边）· hover 三行菜单
+// help-menu.js — 菜单行2 help 按钮（inbox 右边）· 数据驱动多级菜单（hover 逐级展开）
 //
-// 结构（hover help → 菜单；hover 行 → 右侧子菜单）:
-//   contact    → QQ / 邮箱 / 电话号码（点击复制到剪贴板 + qoast 提示）
-//   video      → B 站合集策展视频（点击外部浏览器直接观看）
-//   community  → 评论 / 更新日志 / 公告 / 官方文档（粗体）/ 活动（点击外部浏览器）
+// 数据源（唯一真理）: {Data}/help-menu.json（Data = 运行时数据目录，boot:info.userData 解析；
+//   缺失/损坏 → 内置默认树 DEFAULT_TREE 兜底。读取走 bridge.fs.read（编码机器）。
+//   编辑器: op/帮助菜单编辑器.py（可视化增删改查 + 拖拽调级排序；保存后本机下次打开菜单即生效）。
+// schema v1: { v:1, items:[ { label, i18n?, action?, value?, qoast?, bold?, hideValue?, children?[] } ] }
+//   action 空/缺省 = 无动作（纯目录或纯文本行）｜url 打开网址｜copy 复制 + qoast｜
+//   command 内置动作（命令表 COMMANDS，与 op 工具清单镜像）｜download 下载文件（走下载机）｜
+//   image 图片/二维码悬浮预览（shell-overlay open-image）｜separator 分隔线
+//   渲染: 有 children 才画箭头（没有 = 啥也不打）；hover 逐级展开（无限级）；单击 = 执行本行行为。
+//   文案: 有 i18n 键则按语言显示（label 为回退），否则 label 原样。
 //
 // 挂载点: gaea-host.js renderTabBar() 尾部 → window.qqqHelpMenu.mount(#qqq-goods-bar)
 //         （工具栏每次重建（goods 注册/切换/移除）自动重挂；mount 内先 close 防孤儿菜单）
-// 视频清单唯一维护点: 本文件 HELP_VIDEOS（来源 B 站合集 8697102，2026-09-15 人工策展——
-//         剔除非核心内容，名称已提炼为短名；新增视频 = 此处加一行）
-// 文案: zh.json "help" 段（_i 中文回退，其余语言待翻译管线）；菜单行标签（contact/video/community）恒英文（用户定案）
+// 默认树内容三处同源: 本文件 DEFAULT_TREE ↔ Data/help-menu.json ↔ op 工具内置种子
 // 打开方式: 一律系统外部浏览器（bridge.shell.openExternal，window.open 兜底）
 // 交互: 纯 hover（进入即展开，250ms 延迟关闭）；Esc / 点击别处 / 窗口 resize 即关；
 //       全按钮与菜单行零自定义 cursor（光标铁律）
@@ -25,8 +28,9 @@
   'use strict';
 
   var PAGE = 'https://www.gh555.com/gaea/d/qqqide';
+  var LIVE_URL = 'https://live.bilibili.com/23005203';
 
-  // ★ 视频策展清单（唯一维护点）— B 站合集 space.bilibili.com/543721433/lists/8697102
+  // ★ 视频策展清单（仅默认树兜底用；日常维护改 Data/help-menu.json）
   var HELP_VIDEOS = [
     { t: 'qqqide 总览', u: 'https://www.bilibili.com/video/BV1KiNM6JE73' },
     { t: 'qqqide 是怎样做出来的', u: 'https://www.bilibili.com/video/BV1UGth6kEdR' },
@@ -46,18 +50,65 @@
   ];
 
   var HOVER_CLOSE_DELAY = 250;
+  var DATA_FILE = 'help-menu.json';
+  var TREE_TTL_MS = 1000;   // 新鲜度窗口：打开菜单时距上次读取超窗才后台刷新（防 hover 级联刷屏）
+  var MAX_DEPTH = 20;       // 防御：异常深树截断（正常使用远达不到）
+  var VALID_ACTIONS = ['', 'url', 'copy', 'command', 'download', 'image', 'separator'];
+
+  // ★ 默认树（文件缺失兜底；内容与 Data/help-menu.json、op 工具种子三处同源）
+  var DEFAULT_TREE = {
+    v: 1,
+    items: [
+      {
+        label: 'contact', children: [
+          { label: 'live', action: 'url', value: LIVE_URL },
+          { label: 'QQ', action: 'copy', value: '524906522' },
+          { label: '邮箱', i18n: 'help.email', action: 'copy', value: 'info@gh555.com' },
+          { label: '电话号码', i18n: 'help.phone', action: 'copy', value: '+86 19232854249' }
+        ]
+      },
+      {
+        label: 'video', children: HELP_VIDEOS.map(function (v) {
+          return { label: v.t, action: 'url', value: v.u };
+        })
+      },
+      {
+        label: 'community', children: [
+          { label: '评论', i18n: 'help.comments', action: 'url', value: PAGE + '#comments' },
+          { label: '更新日志', i18n: 'help.changelog', action: 'url', value: PAGE + '#changelog' },
+          { label: '公告', i18n: 'help.announcements', action: 'url', value: PAGE + '#announcements' },
+          { label: '官方文档', i18n: 'help.docs', bold: true, action: 'url', value: PAGE + '#docs/add-project' },
+          { label: '活动', i18n: 'help.activity', action: 'url', value: PAGE + '#video' }
+        ]
+      }
+    ]
+  };
+
+  // ★ 内置动作表（command 行为可选项；与 op/帮助菜单编辑器.py 内清单镜像同步——改一处必须同改另一处）
+  var COMMANDS = {
+    'settings': {
+      run: function () { try { if (window.qqqSettings && window.qqqSettings.open) window.qqqSettings.open(); } catch (e) { } }
+    },
+    'logs': { run: function () { _openDir('logs'); } },
+    'data-dir': { run: function () { _openDir('data'); } },
+    'install-dir': { run: function () { _openDir('root'); } }
+  };
 
   var _btnEl = null;
   var _anchorEl = null;     // 动态锚点（openAt 用；缺省 = _btnEl）
-  var _rootEl = null;       // 三行主菜单
-  var _rootRowEls = [];     // [{key, el}] 主菜单行（高亮管理）
-  var _subEl = null;        // 右侧子菜单
-  var _subKey = null;       // 当前子菜单归属行 key
+  var _rootEl = null;       // 主菜单
+  var _chain = [];          // 打开的逐级子菜单链：_chain[level] = {rowEl, subEl}（level 行的子菜单落于此）
+  var _tree = _normList(DEFAULT_TREE.items);
+  var _treeTs = 0;          // 上次读取数据文件的墙钟
+  var _fetching = false;
+  var _parseWarned = false; // 解析失败只提示一次（禁静默：失败必须可见）
+  var _bootPromise = null;  // boot:info 缓存（Data/Logs/安装目录）
   var _allTimer = null;     // 整体关闭计时器
-  var _subTimer = null;     // 子菜单关闭计时器
   var _globalBound = false;
 
   function _i(key, fb) { try { return window._i ? window._i(key, fb) : fb; } catch (e) { return fb; } }
+  function _bridge() { try { return window.qqqideBridge || null; } catch (e) { return null; } }
+  function _labelOf(item) { return item.i18n ? _i(item.i18n, item.label || item.i18n) : (item.label || '\u2014'); }
 
   // ── 样式（自包含注入，家族外观对齐品牌下拉：卡片底/边框/悬浮色全走主题变量） ──
   function _ensureStyle() {
@@ -83,15 +134,14 @@
       '.qqq-help-menu.open, .qqq-help-sub.open { opacity: 1; pointer-events: auto; }',
       '.qqq-help-menu.open { transform: translateY(0); }',
       '.qqq-help-sub.open { transform: translateX(0); }',
-      '.qqq-help-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 12px; color: var(--text-primary, #586e75); }',
-      '.qqq-help-row:hover, .qqq-help-row.active { background: var(--hover-bg, rgba(0,0,0,0.06)); }',
-      '.qqq-help-arrow { opacity: .55; margin-left: 16px; font-size: 12px; }',
-      '.qqq-help-sub-row { padding: 7px 12px; color: var(--text-primary, #586e75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }',
-      '.qqq-help-sub-row:hover { background: var(--hover-bg, rgba(0,0,0,0.06)); }',
+      '.qqq-help-row, .qqq-help-sub-row { display: flex; align-items: center; padding: 7px 12px; color: var(--text-primary, #586e75); }',
+      '.qqq-help-row:hover, .qqq-help-row.active, .qqq-help-sub-row:hover, .qqq-help-sub-row.active { background: var(--hover-bg, rgba(0,0,0,0.06)); }',
+      '.qqq-help-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
+      '.qqq-help-arrow { margin-left: auto; padding-left: 16px; opacity: .55; font-size: 12px; }',
       '.qqq-help-sub-row.bold { font-weight: 700; }',
-      '.qqq-help-contact { display: flex; align-items: center; }',
-      '.qqq-help-contact-label { min-width: 58px; opacity: .85; margin-right: 10px; }',
-      '.qqq-help-contact-val { font-weight: 600; }'
+      '.qqq-help-contact-label { flex: 0 0 auto; min-width: 58px; opacity: .85; margin-right: 10px; }',
+      '.qqq-help-contact-val { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
+      '.qqq-help-sep { height: 0; border-top: 1px solid var(--border-color, #d6d6d6); margin: 4px 8px; opacity: .7; }'
     ].join('\n');
     document.head.appendChild(s);
   }
@@ -99,24 +149,22 @@
   // ── 计时器 ──
   function _clearTimers() {
     if (_allTimer) { clearTimeout(_allTimer); _allTimer = null; }
-    if (_subTimer) { clearTimeout(_subTimer); _subTimer = null; }
   }
   function _scheduleAll() {
     _clearTimers();
     _allTimer = setTimeout(_closeAll, HOVER_CLOSE_DELAY);
-  }
-  function _scheduleSub() {
-    if (_subTimer) clearTimeout(_subTimer);
-    _subTimer = setTimeout(_removeSub, HOVER_CLOSE_DELAY);
   }
 
   // ── 全局收尾监听（外点关闭 / Esc / resize） ──
   function _containsAny(t) {
     if (!t) return false;
     if (_rootEl && _rootEl.contains(t)) return true;
-    if (_subEl && _subEl.contains(t)) return true;
     if (_btnEl && _btnEl.contains(t)) return true;
     if (_anchorEl && _anchorEl.contains(t)) return true;
+    for (var i = 0; i < _chain.length; i++) {
+      var e = _chain[i];
+      if (e && e.subEl && e.subEl.contains(t)) return true;
+    }
     return false;
   }
   function _onDocClick(e) {
@@ -141,35 +189,141 @@
     window.removeEventListener('resize', _closeAll);
   }
 
-  // ── 主菜单 ──
-  var ROWS = [
-    { key: 'contact', label: 'contact' },
-    { key: 'video', label: 'video' },
-    { key: 'community', label: 'community' }
-  ];
+  // ── 数据加载（文件 → 归一化树；缺失/损坏保底） ──
+  function _normNode(n, depth) {
+    if (!n || typeof n !== 'object' || depth > MAX_DEPTH) return null;
+    var action = (typeof n.action === 'string') ? n.action.toLowerCase() : '';
+    if (VALID_ACTIONS.indexOf(action) < 0) { action = ''; }   // 未识别 → 退化为惰性行（不误伤数据）
+    var item = {
+      label: (typeof n.label === 'string') ? n.label : '',
+      i18n: (typeof n.i18n === 'string') ? n.i18n : '',
+      action: action,
+      value: (typeof n.value === 'string') ? n.value : '',
+      qoast: (typeof n.qoast === 'string') ? n.qoast : '',
+      bold: !!n.bold,
+      hideValue: !!n.hideValue,
+      children: []
+    };
+    if (Array.isArray(n.children)) {
+      for (var i = 0; i < n.children.length; i++) {
+        var c = _normNode(n.children[i], depth + 1);
+        if (c) item.children.push(c);
+      }
+    }
+    if (!item.label && !item.i18n && item.action !== 'separator' && !item.children.length) return null;
+    return item;
+  }
+  function _normList(raw) {
+    var out = [];
+    if (Array.isArray(raw)) {
+      for (var i = 0; i < raw.length; i++) {
+        var n = _normNode(raw[i], 1);
+        if (n) out.push(n);
+      }
+    }
+    return out;
+  }
+  function _parseTree(text) {
+    var s = String(text).replace(/^\uFEFF/, '').trim();
+    if (!s) return null;
+    var obj;
+    try { obj = JSON.parse(s); } catch (e) { return null; }
+    var raw = (obj && Array.isArray(obj.items)) ? obj.items : (Array.isArray(obj) ? obj : null);
+    if (!raw) return null;
+    return { v: 1, items: _normList(raw) };
+  }
+  function _bootInfo() {
+    if (_bootPromise) return _bootPromise;
+    _bootPromise = new Promise(function (resolve) {
+      var br = _bridge();
+      if (!br || !br.boot || !br.boot.getInfo) { resolve(null); return; }
+      br.boot.getInfo().then(function (info) { resolve(info || null); }, function () { resolve(null); });
+    });
+    return _bootPromise;
+  }
+  function _fetchTree() {
+    if (_fetching) return;
+    _fetching = true;
+    _treeTs = Date.now();
+    _bootInfo().then(function (info) {
+      var dir = (info && (info.userData || info.dataDir)) || '';
+      var br = _bridge();
+      if (!dir || !br || !br.fs || !br.fs.read) return null;
+      return br.fs.read(String(dir).replace(/[\\/]+$/, '') + '/' + DATA_FILE);
+    }).then(function (text) {
+      _fetching = false;
+      if (typeof text !== 'string' || !text) return;   // 文件不存在 → 保持内置默认
+      var t = _parseTree(text);
+      if (!t) {
+        try { console.warn('[qqqHelpMenu] ' + DATA_FILE + ' 解析失败，沿用当前菜单'); } catch (e) { }
+        if (!_parseWarned) {
+          _parseWarned = true;
+          try {
+            if (window.qqqideQoast && window.qqqideQoast.show) {
+              window.qqqideQoast.show('[help] ' + DATA_FILE + ' 格式有误，已临时回退内置默认菜单', { type: 'error', duration: 12000 });
+            }
+          } catch (e) { }
+        }
+        return;
+      }
+      _tree = t;
+      if (_rootEl && _rootEl.parentNode) _rebuildOpen();   // 开着菜单 → 当场换新（编辑器保存即可见）
+    }).catch(function () { _fetching = false; });
+  }
+  function _kickRefresh() {
+    var now = Date.now();
+    if (!_fetching && (now - _treeTs) > TREE_TTL_MS) _fetchTree();
+  }
 
-  function _buildRoot() {
-    var root = document.createElement('div');
-    root.className = 'qqq-help-menu';
-    root.addEventListener('mouseenter', _clearTimers);
-    root.addEventListener('mouseleave', _scheduleAll);
-    _rootRowEls = [];
-    ROWS.forEach(function (d) {
-      var row = document.createElement('div');
-      row.className = 'qqq-help-row';
-      row.dataset.sub = d.key;
+  // ── 行渲染（统一构建器：有无 children 决定箭头；行为决定整行内容与点击） ──
+  function _buildRow(item, level) {
+    var row = document.createElement('div');
+    if (item.action === 'separator') {
+      row.className = 'qqq-help-sep';
+      return row;
+    }
+    row.className = (level === 0) ? 'qqq-help-row' : 'qqq-help-sub-row';
+    if (item.bold) row.className += ' bold';
+    var hasKids = !!(item.children && item.children.length);
+    if (item.action === 'copy' && item.value && !item.hideValue) {
+      // 联系方式行：名称 + 值两列（点击复制 + qoast）
+      row.className += ' qqq-help-contact';
+      var lb = document.createElement('span');
+      lb.className = 'qqq-help-contact-label';
+      lb.textContent = _labelOf(item);
+      var vl = document.createElement('span');
+      vl.className = 'qqq-help-contact-val';
+      vl.textContent = item.value;
+      row.appendChild(lb);
+      row.appendChild(vl);
+    } else {
       var lab = document.createElement('span');
-      lab.textContent = d.label;
+      lab.className = 'qqq-help-label';
+      lab.textContent = _labelOf(item);
+      row.appendChild(lab);
+    }
+    if (hasKids) {
       var arr = document.createElement('span');
       arr.className = 'qqq-help-arrow';
       arr.textContent = '\u203A';
-      row.appendChild(lab);
       row.appendChild(arr);
-      row.addEventListener('mouseenter', function () { _clearTimers(); _showSub(d.key, row); });
-      row.addEventListener('mouseleave', _scheduleSub);
-      _rootRowEls.push({ key: d.key, el: row });
-      root.appendChild(row);
-    });
+    }
+    row.addEventListener('mouseenter', function () { _rowEnter(item, row, level); });
+    row.addEventListener('click', function () { _rowClick(item); });
+    return row;
+  }
+
+  function _buildMenu(items, cls, level) {
+    var el = document.createElement('div');
+    el.className = cls;
+    for (var i = 0; i < items.length; i++) el.appendChild(_buildRow(items[i], level));
+    return el;
+  }
+
+  function _buildRoot() {
+    var root = _buildMenu(_tree.items, 'qqq-help-menu', 0);
+    root.addEventListener('mouseenter', _clearTimers);
+    root.addEventListener('mouseleave', _scheduleAll);
     return root;
   }
 
@@ -199,11 +353,32 @@
     _rootEl.style.top = top + 'px';
   }
 
+  // 子菜单定位：右贴父面板（放不下翻左）、纵向对齐本行（越界钳回）
+  function _positionSub(entry, level) {
+    if (!entry || !entry.subEl || !entry.rowEl) return;
+    var sub = entry.subEl;
+    var parentEl = (level === 0) ? _rootEl : (_chain[level - 1] && _chain[level - 1].subEl);
+    if (!parentEl) return;
+    var pr = parentEl.getBoundingClientRect();
+    var rr = entry.rowEl.getBoundingClientRect();
+    var w = sub.offsetWidth || 180, h = sub.offsetHeight || 120;
+    var left = pr.right + 2;
+    if (left + w > window.innerWidth - 8) left = pr.left - w - 2;
+    if (left < 8) left = 8;
+    var top = rr.top;
+    if (top + h > window.innerHeight - 8) top = window.innerHeight - h - 8;
+    if (top < 4) top = 4;
+    sub.style.left = left + 'px';
+    sub.style.top = top + 'px';
+  }
+
   function _showRoot() {
     var anchor = _anchorCur();
     if (!anchor) return;
+    _kickRefresh();
     if (_rootEl && _rootEl.parentNode) { _positionRoot(); return; } // 已开：重定位（⋯ 行间切换复用）
     _ensureStyle();
+    _truncateChain(0);
     _removeRoot();
     var root = _buildRoot();
     document.body.appendChild(root);
@@ -226,111 +401,71 @@
 
   function _removeRoot() {
     if (_rootEl) { try { _rootEl.remove(); } catch (e) { } _rootEl = null; }
-    _rootRowEls = [];
   }
 
-  function _markActiveRow(rowEl) {
-    for (var i = 0; i < _rootRowEls.length; i++) {
-      var it = _rootRowEls[i];
-      if (it.el === rowEl) { try { it.el.classList.add('active'); } catch (e) { } }
-      else { try { it.el.classList.remove('active'); } catch (e) { } }
+  // ── 逐级子菜单链 ──
+  function _truncateChain(from) {
+    for (var i = _chain.length - 1; i >= from; i--) {
+      var e = _chain[i];
+      if (!e) continue;
+      try { if (e.subEl) e.subEl.remove(); } catch (er) { }
+      try { if (e.rowEl) e.rowEl.classList.remove('active'); } catch (er) { }
+      _chain[i] = null;
     }
+    if (_chain.length > from) _chain.length = from;
   }
 
-  // ── 子菜单数据 ──
-  function _subRows(key) {
-    if (key === 'contact') {
-      return [
-        { label: 'QQ', value: '524906522' },
-        { label: _i('help.email', '邮箱'), value: 'info@gh555.com' },
-        { label: _i('help.phone', '电话号码'), value: '+86 19232854249' }
-      ];
+  function _markActive(rowEl) {
+    var parent = rowEl.parentNode;
+    if (parent) {
+      var rows = parent.querySelectorAll('.qqq-help-row.active, .qqq-help-sub-row.active');
+      for (var i = 0; i < rows.length; i++) rows[i].classList.remove('active');
     }
-    if (key === 'video') {
-      return HELP_VIDEOS.map(function (v) { return { label: v.t, url: v.u }; });
-    }
-    if (key === 'community') {
-      return [
-        { label: _i('help.comments', '评论'), url: PAGE + '#comments' },
-        { label: _i('help.changelog', '更新日志'), url: PAGE + '#changelog' },
-        { label: _i('help.announcements', '公告'), url: PAGE + '#announcements' },
-        { label: _i('help.docs', '官方文档'), url: PAGE + '#docs/add-project', bold: true },
-        { label: _i('help.activity', '活动'), url: PAGE + '#video' }
-      ];
-    }
-    return [];
+    try { rowEl.classList.add('active'); } catch (e) { }
   }
 
-  function _positionSub(rowEl) {
-    if (!_subEl || !_rootEl || !rowEl) return;
-    var rowRect = rowEl.getBoundingClientRect();
-    var rootRect = _rootEl.getBoundingClientRect();
-    var w = _subEl.offsetWidth || 180, h = _subEl.offsetHeight || 100;
-    var left = rootRect.right + 2;
-    if (left + w > window.innerWidth - 8) left = rootRect.left - w - 2; // 右侧放不下 → 翻到左侧
-    if (left < 8) left = 8;
-    var top = rowRect.top;
-    if (top + h > window.innerHeight - 8) top = window.innerHeight - h - 8;
-    if (top < 4) top = 4;
-    _subEl.style.left = left + 'px';
-    _subEl.style.top = top + 'px';
-    if (!_subEl.classList.contains('open')) {
-      requestAnimationFrame(function () { if (_subEl) _subEl.classList.add('open'); });
-    }
+  function _rowEnter(item, rowEl, level) {
+    _clearTimers();
+    var same = !!(_chain[level] && _chain[level].rowEl === rowEl);
+    _truncateChain(level + (same ? 1 : 0));   // 同行走深清（保留本行子菜单）；换行从本层重开
+    if (same) return;
+    if (item.children && item.children.length) _openSub(item, rowEl, level);
   }
 
-  function _showSub(key, rowEl) {
-    // 同一行的子菜单已开 → 仅校正位置（行间折返不重建不闪烁）
-    if (_subEl && _subKey === key && _subEl.parentNode) { _markActiveRow(rowEl); _positionSub(rowEl); return; }
-    _removeSub(); // 注: 会清 active 标记 —— 必须先于 _markActiveRow
-    _markActiveRow(rowEl);
-    var sub = document.createElement('div');
-    sub.className = 'qqq-help-sub';
-    var rows = _subRows(key);
-    rows.forEach(function (r) {
-      var el = document.createElement('div');
-      if (key === 'contact') {
-        el.className = 'qqq-help-sub-row qqq-help-contact';
-        var lb = document.createElement('span');
-        lb.className = 'qqq-help-contact-label';
-        lb.textContent = r.label;
-        var vl = document.createElement('span');
-        vl.className = 'qqq-help-contact-val';
-        vl.textContent = r.value;
-        el.appendChild(lb);
-        el.appendChild(vl);
-        el.addEventListener('click', function () { _copyValue(r.label, r.value); });
-      } else {
-        el.className = 'qqq-help-sub-row' + (r.bold ? ' bold' : '');
-        el.textContent = r.label;
-        el.addEventListener('click', function () { _openExternal(r.url); });
-      }
-      sub.appendChild(el);
-    });
+  function _openSub(item, rowEl, level) {
+    var sub = _buildMenu(item.children, 'qqq-help-sub', level + 1);
     sub.addEventListener('mouseenter', _clearTimers);
     sub.addEventListener('mouseleave', _scheduleAll);
     document.body.appendChild(sub);
-    _subEl = sub;
-    _subKey = key;
-    _positionSub(rowEl);
-  }
-
-  function _removeSub() {
-    if (_subEl) { try { _subEl.remove(); } catch (e) { } _subEl = null; }
-    _subKey = null;
-    for (var i = 0; i < _rootRowEls.length; i++) {
-      try { _rootRowEls[i].el.classList.remove('active'); } catch (e) { }
-    }
+    var entry = { rowEl: rowEl, subEl: sub };
+    _chain[level] = entry;
+    _markActive(rowEl);
+    _positionSub(entry, level);
+    requestAnimationFrame(function () { if (_chain[level] === entry) sub.classList.add('open'); });
   }
 
   function _closeAll() {
     _clearTimers();
-    _removeSub();
+    _truncateChain(0);
     _removeRoot();
     var a = _anchorCur();
     if (a) { try { a.classList.remove('qqq-help-open'); } catch (e) { } }
     _anchorEl = null;
     _unbindGlobal();
+  }
+
+  // 数据更新时的原地重建（保持锚点与开启态）
+  function _rebuildOpen() {
+    var anchor = _anchorCur();
+    if (!_rootEl || !_rootEl.parentNode) return;
+    _truncateChain(0);
+    _removeRoot();
+    var root = _buildRoot();
+    document.body.appendChild(root);
+    _rootEl = root;
+    _positionRoot();
+    if (anchor) { try { anchor.classList.add('qqq-help-open'); } catch (e) { } }
+    requestAnimationFrame(function () { if (_rootEl) _rootEl.classList.add('open'); });
   }
 
   // ── 动作 ──
@@ -358,12 +493,18 @@
     } catch (e) { }
   }
 
-  function _copyValue(label, value) {
+  function _copyValue(label, value, tpl) {
     _closeAll();
     var done = function () {
+      var msg;
+      if (tpl) {
+        msg = String(tpl).replace(/\{value\}/g, value).replace(/\{label\}/g, label);
+      } else {
+        msg = label + ' ' + value + ' ' + _i('help.copied', '已复制');
+      }
       try {
         if (window.qqqideQoast && typeof window.qqqideQoast.show === 'function') {
-          window.qqqideQoast.show(label + ' ' + value + ' ' + _i('help.copied', '已复制'), { type: 'success', duration: 5000 });
+          window.qqqideQoast.show(msg, { type: 'success', duration: 5000 });
         }
       } catch (e) { }
     };
@@ -378,6 +519,70 @@
       _legacyCopy(value);
       done();
     }
+  }
+
+  function _openDir(which) {
+    _bootInfo().then(function (info) {
+      if (!info) return;
+      var p = (which === 'logs') ? info.logsDir : (which === 'data') ? (info.userData || info.dataDir) : info.appRoot;
+      if (!p) return;
+      try {
+        var br = _bridge();
+        if (br && br.shell && br.shell.openPath) br.shell.openPath(p);
+      } catch (e) { }
+    });
+  }
+
+  function _runCommand(id) {
+    _closeAll();
+    var c = COMMANDS[id];
+    if (!c) { try { console.warn('[qqqHelpMenu] 未知内置动作: ' + id); } catch (e) { } return; }
+    try { c.run(); } catch (e) { }
+  }
+
+  function _fileNameFromUrl(u) {
+    try {
+      var s = String(u).split(/[?#]/)[0];
+      var seg = (s.split('/').pop() || '');
+      try { seg = decodeURIComponent(seg); } catch (e2) { }
+      return /\.[a-z0-9]{1,8}$/i.test(seg) ? seg : '';
+    } catch (e) { return ''; }
+  }
+
+  function _download(url) {
+    _closeAll();
+    try {
+      if (window.qqqideDownload && typeof window.qqqideDownload.save === 'function') {
+        window.qqqideDownload.save(url, _fileNameFromUrl(url), {});   // 统一下载机（对话框/进度/重名不覆盖）
+        return;
+      }
+    } catch (e) { }
+    try {
+      var br = _bridge();
+      if (br && br.download && br.download.start) { br.download.start({ url: url }); return; }
+    } catch (e) { }
+    _openExternal(url);
+  }
+
+  function _showImage(v) {
+    _closeAll();
+    var src = v, local = null;
+    if (/^[a-zA-Z]:[\\/]/.test(v) || /^\\\\/.test(v)) {          // 本机路径 → file:/// 直载
+      local = v;
+      src = 'file:///' + v.replace(/\\/g, '/');
+    }
+    try { window.postMessage({ type: 'qqqide-overlay', action: 'open-image', src: src, localPath: local }, '*'); } catch (e) { }
+  }
+
+  function _rowClick(item) {
+    var act = item.action;
+    if (act === 'url' && item.value) { _openExternal(item.value); return; }
+    if (act === 'copy' && item.value) { _copyValue(_labelOf(item), item.value, item.qoast); return; }
+    if (act === 'command' && item.value) { _runCommand(item.value); return; }
+    if (act === 'download' && item.value) { _download(item.value); return; }
+    if (act === 'image' && item.value) { _showImage(item.value); return; }
+    if (item.children && item.children.length) return;   // 纯目录行：点击不做事（hover 已展开）
+    _closeAll();                                          // 纯文本行：点击仅收起
   }
 
   // ── 挂载（gaea-host renderTabBar 调用；工具栏重建即先复位，防孤儿菜单） ──
@@ -397,7 +602,11 @@
     btn.addEventListener('mouseleave', _scheduleAll);
     tabBarEl.appendChild(btn);
     _btnEl = btn;
+    _kickRefresh();   // 预热：首次 hover 之前先读一次数据文件（首开即最新）
   }
 
-  window.qqqHelpMenu = { mount: mount, close: _closeAll, openAt: openAt };
+  // 手动刷新数据（调试/工具联动用；正常无需调用——打开菜单自动按 TTL 刷新）
+  function reload() { _treeTs = 0; _fetchTree(); }
+
+  window.qqqHelpMenu = { mount: mount, close: _closeAll, openAt: openAt, reload: reload };
 })();

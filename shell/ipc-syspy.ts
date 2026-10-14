@@ -133,7 +133,7 @@ function resolveEnginesRoot(portableRoot: string): string | null {
     } catch { return null; }
 }
 
-function nodeFacadePath(portableRoot: string): string | null {
+export function nodeFacadePath(portableRoot: string): string | null {
     const root = resolveEnginesRoot(portableRoot);
     if (!root) return null;
     return path.join(root, 'node', process.platform === 'win32' ? 'node.exe' : 'node');

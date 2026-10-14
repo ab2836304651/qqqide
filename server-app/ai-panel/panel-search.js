@@ -313,24 +313,10 @@
         var root = (typeof questStore !== 'undefined' && questStore.getProjectRoot) ? questStore.getProjectRoot() : null;
         if (!root) return;
         var scopePath = root.replace(/\\/g, '/') + '/_qqq/';
+        // ★ 搜索词随 open 一起透传（search.js 待新卡 iframe 就绪后定向投递一次）——
+        //   禁 broadcast：旧实现全量广播会把其它搜索卡的词/范围一起改写并重搜（跨卡污染）
         if (window.parent && window.parent.qqqideOpenSearch) {
-            window.parent.qqqideOpenSearch(scopePath, true);
-        }
-        // Send query to search iframe after it loads
-        if (selText) {
-            var _sendQuery = function () {
-                try {
-                    var panes = window.parent.document.querySelectorAll('.qqq-tab-pane');
-                    for (var i = 0; i < panes.length; i++) {
-                        var iframe = panes[i]._searchIframe || panes[i].querySelector('iframe[src*="search-ui.html"]');
-                        if (iframe && iframe.contentWindow) {
-                            iframe.contentWindow.postMessage({ type: 'qqqide-search-set-scope', path: scopePath, query: selText }, '*');
-                        }
-                    }
-                } catch (_) { }
-            };
-            setTimeout(_sendQuery, 500);
-            setTimeout(_sendQuery, 1200);
+            window.parent.qqqideOpenSearch(scopePath, true, selText || '');
         }
     }
 

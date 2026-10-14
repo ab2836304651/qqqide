@@ -261,7 +261,6 @@
             "removeTitle": "Remover Item",
             "removeConfirm": "Tem certeza que deseja remover 「{n}」 da visualização de IA?",
             "removeBtn": "Remover",
-            "removeAsk": "Remover 「{n}」?",
             "openElsewhere": "⚠️ Este projeto já está aberto como pasta principal em outra janela",
             "clearedBusy": "⚠️ A pasta principal está sendo usada por outra janela; a viewport da IA foi limpa para uma janela vazia",
             "filterPh": "Filtrar...",
@@ -427,6 +426,10 @@
         "timelineNoRoot": "Não foi possível determinar o diretório raiz do projeto para este arquivo. A linha do tempo não está disponível.",
         "timelineOpenFail": "Falha ao abrir a janela da linha do tempo. Tente novamente mais tarde.",
         "minimap": "Minimapa",
+        "run": "Executar",
+        "runNoInterp": "O interpretador integrado não está pronto (componentes ausentes)",
+        "runNoTerm": "Não foi possível abrir o terminal",
+        "runFail": "Falha na execução",
         "tabs": {
             "close": "Fechar aba",
             "closeOthers": "Fechar outras",
@@ -838,6 +841,8 @@
             "showKey": "Mostrar/Ocultar",
             "model": "Nome do modelo",
             "modelPh": "Nome do modelo conforme documentação do provedor",
+            "maxTokens": "Tokens de saída máx. (opcional)",
+            "maxTokensPh": "Vazio = padrão do provedor (recomendado)",
             "fetchModels": "Obter lista de modelos",
             "probeLocal": "Detectar modelos locais",
             "needBase": "Preencha o endereço da API primeiro",
@@ -924,7 +929,8 @@
         "waitNew": "A IA ainda não respondeu à tarefa atual. Aguarde antes de criar uma nova.",
         "recoverPrefix": "Reconexão de rede restaurada. Registro da interrupção anterior do bloco:",
         "recoverSuffix": "｜Por favor, continue e conclua a tarefa original com base no contexto completo da conversa.",
-        "retryExhausted": "Tentativa repetida 3 vezes sem sucesso. Pode ser devido ao esgotamento da cota/faturamento ou falha no servidor. Tente novamente mais tarde.",
+        "retryExhausted": "Falha após 3 tentativas. Tente novamente mais tarde; se o problema persistir, verifique sua conexão, conta ou configurações do provedor.",
+        "retryExhaustedDetail": "Tentativa repetida 3 vezes sem sucesso — último erro: {msg}",
         "pathIncompatible": "O caminho contém caracteres incompatíveis e não pode ser anexado",
         "bulletTrunc": "\n\n... [Intermediário truncado, original {0}KB] ...\n\n",
         "exhaustedMsg": "⚠ Atingido o número máximo de chamadas de ferramenta (200), mas a IA não gerou uma resposta final. O contexto da conversa foi mantido. Você pode continuar fazendo perguntas.",
@@ -1021,7 +1027,8 @@
             "intDone": "── Ctrl+C · {0} processos encerrados ──",
             "intIdle": "── Ctrl+C · Nenhum comando em execução ──",
             "intSig": "── Ctrl+C · Sinal de interrupção enviado ──",
-            "intRestart": "── Ctrl+C · Reinicie a instância para aplicar a atualização do shell ──"
+            "intRestart": "── Ctrl+C · Reinicie a instância para aplicar a atualização do shell ──",
+            "dropNoPath": "── Ignorando {0} itens arrastados (sem caminho local) ──"
         },
         "git": {
             "refresh": "Atualizar",
@@ -1288,7 +1295,9 @@
             "intFail": "[Falha no Interrupt] {0}",
             "terminated": "Encerrado · Use Restart para reiniciar",
             "termLine": "── Sessão encerrada (Use Restart para reiniciar) ──",
-            "deadHint": "Estado encerrado · Use Restart para reiniciar"
+            "deadHint": "Estado encerrado · Use Restart para reiniciar",
+            "dropNoPath": "── Ignorando {0} itens arrastados (sem caminho local) ──",
+            "dropIdle": "Sessão não pronta · Arraste para inserir"
         },
         "dsecret": {
             "targetProject": "Projeto alvo",
@@ -2230,6 +2239,12 @@
             "saveConsole": "Salvar log do console",
             "logFile": "Arquivo de log",
             "saveFile": "Salvar arquivo"
+        },
+        "browserHost": {
+            "title": "qd (qqqide) Navegador",
+            "startHosted": "Esta janela é gerenciada pelo qqqide: a IA opera páginas da web por meio dela.",
+            "startMonitor": "Durante uma tarefa, você pode acompanhar o progresso ao vivo aqui; quando você for necessário (ex.: login), a IA espera aqui.",
+            "startHint": "Fechar esta janela encerra o navegador; o estado de login é mantido para a próxima vez."
         },
         "browser": {
             "openFailTitle": "Não foi possível abrir o navegador automaticamente — qd (qqqide)",

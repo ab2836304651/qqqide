@@ -35,11 +35,35 @@ body {
 }
 ::selection { background:#ffd301; color:#000; }
 [data-theme="dark"] ::selection { background:#6a5a10; color:#f0e8d8; }
-/* 滚动条（项目内嵌弹窗标准 5px 风格） */
+/* ═══ 滚动条统一块（同源镜像 = AI 面板 ai-panel/index.html 头部同块——改任一侧必须同改另一侧）═══
+   纵向：5px 双向同粗 · 透明轨道 · 中性灰滑块 rgba(128,128,128,.35)（hover .55）· 3px 圆角 · 无箭头 · 透明拐角。
+   ★ 横向例外（用户定案：左右交互必须能点箭头/滑轨）：12px 高 · 双端箭头（每端恒一枚，左端◀ 右端▶）
+   + 方形按钮恒直角且底色恒透明（禁设常驻底色，边界靠「基底色 vs 轨道淡底」天然可见）
+   + hover=1px 细方框描边 / 按下=方框+实感底 rgba(128,128,128,.30)（禁取接近轨道 .10 的淡值）
+   + 滑块直角 + 轨道极淡底。本窗唯一正当横滚区 = 表格（正文/代码块恒折行，禁为其挂横滚）。
+   Chromium 每端本含 back+forward 双钮，内层两枚恒隐（禁放回）。 */
 ::-webkit-scrollbar { width:5px; height:5px; }
 ::-webkit-scrollbar-track { background:transparent; }
 ::-webkit-scrollbar-thumb { background:rgba(128,128,128,0.35); border-radius:3px; }
 ::-webkit-scrollbar-thumb:hover { background:rgba(128,128,128,0.55); }
+::-webkit-scrollbar-corner { background:transparent; }
+::-webkit-scrollbar-button { display:none; }
+/* ── 横向例外（仅 :horizontal 分支；纵向维持 5px 无箭头）── */
+::-webkit-scrollbar:horizontal { height:12px; }
+::-webkit-scrollbar-track:horizontal { background:rgba(128,128,128,0.10); }
+::-webkit-scrollbar-thumb:horizontal { border-radius:0; }
+::-webkit-scrollbar-button:horizontal { display:block; width:12px; height:12px; background-color:transparent; border-radius:0; background-repeat:no-repeat; background-position:center; background-size:11px 11px; }
+::-webkit-scrollbar-button:horizontal:decrement { width:12px; height:12px; background-image:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20d='M6.8,0.5L1.2,4L6.8,7.5Z'%20fill='%23808080'%20fill-opacity='0.7'/%3E%3C/svg%3E"); }
+::-webkit-scrollbar-button:horizontal:increment { width:12px; height:12px; background-image:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20d='M1.2,0.5L6.8,4L1.2,7.5Z'%20fill='%23808080'%20fill-opacity='0.7'/%3E%3C/svg%3E"); }
+/* 双钮复位：恒保左端 :start:decrement=◀、右端 :end:increment=▶ */
+::-webkit-scrollbar-button:horizontal:start:increment,
+::-webkit-scrollbar-button:horizontal:end:decrement { display:none; width:0; height:0; background-image:none; }
+/* 箭头钮反馈：hover = 1px 细方框描边 · 按下 = 方框 + 实感底 */
+::-webkit-scrollbar-button:horizontal:decrement:hover,
+::-webkit-scrollbar-button:horizontal:decrement:active { background-image:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='12'%20height='12'%3E%3Crect%20x='0.5'%20y='0.5'%20width='11'%20height='11'%20fill='none'%20stroke='%23808080'%20stroke-opacity='0.55'%20stroke-width='1'/%3E%3C/svg%3E"),url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20d='M6.8,0.5L1.2,4L6.8,7.5Z'%20fill='%23808080'%20fill-opacity='0.7'/%3E%3C/svg%3E"); background-size:12px 12px,11px 11px; }
+::-webkit-scrollbar-button:horizontal:increment:hover,
+::-webkit-scrollbar-button:horizontal:increment:active { background-image:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='12'%20height='12'%3E%3Crect%20x='0.5'%20y='0.5'%20width='11'%20height='11'%20fill='none'%20stroke='%23808080'%20stroke-opacity='0.55'%20stroke-width='1'/%3E%3C/svg%3E"),url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%208%208'%3E%3Cpath%20d='M1.2,0.5L6.8,4L1.2,7.5Z'%20fill='%23808080'%20fill-opacity='0.7'/%3E%3C/svg%3E"); background-size:12px 12px,11px 11px; }
+::-webkit-scrollbar-button:horizontal:active { background-color:rgba(128,128,128,0.30); }
 
 /* ═══ md 内容根 ═══ */
 #md-root {
@@ -189,6 +213,30 @@ try {
   });
   _ro.observe(document.documentElement);
 } catch (_) { }
+
+// ═══ 表格横滚手势（同源镜像 = AI 面板 panel-state.js「表格横滚」唯一源；改任一侧必须同改另一侧）═══
+//   光标停在表格上 → 上下滚轮直接左右滚表；滚到边缘自动交还文档纵向滚动（无缝接力）。
+//   依据：表格恒无纵向滚动条（无 max-height、内容自动撑高）→ 滚轮纵向意图恒为空，无损映射为横向；
+//   触控板横滑（deltaX 主导）/ Ctrl（缩放）一律放行原生；仅认表格容器，其余容器零介入。
+document.addEventListener('wheel', function (e) {
+  if (e.defaultPrevented || e.ctrlKey) return;
+  if (Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+  var sc = null, n = e.target;
+  while (n && n !== document) {
+    if (n.classList && (n.classList.contains('table-inner') || n.classList.contains('table-wrap'))) {
+      if (n.scrollWidth - n.clientWidth > 0 && (n.classList.contains('table-inner') || n.querySelector('table'))) { sc = n; break; }
+    }
+    n = n.parentElement;
+  }
+  if (!sc) return;
+  var max = sc.scrollWidth - sc.clientWidth;
+  var cur = sc.scrollLeft;
+  var dy = e.deltaMode === 1 ? e.deltaY * 16 : (e.deltaMode === 2 ? e.deltaY * sc.clientWidth : e.deltaY);
+  if (!dy) return;
+  if ((dy > 0 && cur >= max - 0.5) || (dy < 0 && cur <= 0.5)) return;   // 已到边：交还文档纵向滚动
+  e.preventDefault();
+  sc.scrollLeft = Math.max(0, Math.min(max, cur + dy));
+}, { capture: true, passive: false });
 
 // ═══ 媒体路径解析（唯一入口；相对 → file:///；空格/#/非 ASCII 逐段编码）═══
 function _attr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
@@ -397,7 +445,7 @@ window.qqqLpl.config = {
   allowPosix: true,
   resolve: function (raw) {
     var u = String(raw || '');
-    if (/^[A-Za-z]:[\\/]/.test(u) || u.charAt(0) === '/' || u.charAt(0) === '\\') return u;
+    if (/^[A-Za-z]:[\\/]/.test(u) || u.charAt(0) === '/' || u.charAt(0) === '\\' || /^file:\/\/\//i.test(u)) return u;
     if (!_baseDir) return u;
     var absMain = _joinPath(_baseDir, u.replace(/\\/g, '/'));
     if (!absMain || absMain === u) return u;

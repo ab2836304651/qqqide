@@ -102,6 +102,10 @@
       // 图标
       '--icon-subtle': dark ? '#5a5650' : '#c0bab0',
 
+      // WYSIWYG 相框透明棋盘格双色（唯一消费者 = frame-renderer；亮=暖米 / 暗=深灰——随主题切换即时重绘，零帧重建）
+      '--frame-checker-a': dark ? '#1e1e1e' : '#fdf6e3',
+      '--frame-checker-b': dark ? '#2a2a2a' : '#e6e1cf',
+
       // 金饰（q2 兼容）
       '--gold-accent': dark ? '#5a4d2a' : '#DEC987',
       '--gold-accent-hover': dark ? '#6a5a30' : '#d4c079',

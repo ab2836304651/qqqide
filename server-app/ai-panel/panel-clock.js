@@ -412,6 +412,92 @@ function _initClockBlock(aiDiv) {
     canvas.addEventListener('mouseleave', function () { _hidePieTooltip(); _tooltipEnd(); });
 }
 
+// ═══ 楼层时钟多目标集（唯一写入口）═══
+// 旧写法：时钟/费用只认 agent._activeAiDiv 这「一个可变指针」——切 quest / 跨面板重建卡片 /
+// 面板同步等事件都能在建楼中途把它搬走或置空；被留下、屏上正显示的那块钟表从此无人更新：
+// 秒针冻结、封顶「变黑定格」也打到了被搬走的指针上 → 楼层建完仍停在绿色建楼态（客户截图实锤：
+// 钟值卡在建楼第 11 分钟的某一秒、费用卡在同刻，而 House/Room/FILE 早已是终值）。
+// 定案：起楼时把本层的全部钟表元素登记成【多目标集】；一切书写（秒跳/费用/收官变黑）恒遍历全集。
+// 元素一旦收官即打钉（_floorDoneTs）——任何迟到者（跨面板重建 tick / 幽灵钟）永不再把它染回建楼色。
+function _floorClockElsOf(ag) {
+    if (!ag) return [];
+    if (ag._floorClockEls && ag._floorClockEls.length) return ag._floorClockEls;
+    return ag._activeAiDiv ? [ag._activeAiDiv] : [];
+}
+
+// 收官变黑（多目标版）：黑钟 + 完结戳 + 定格时长（非 stopFloorTimer 的收尾路径兜底调用；幂等）
+function _blackenFloorClockEls(ag) {
+    if (!ag) return;
+    var els = _floorClockElsOf(ag);
+    var _doneMs = Date.now();
+    for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        if (!el || !el._clockBlock) continue;
+        el._clockBlock.className = 'msg-ai-clock';
+        if (!el._floorDoneTs) { el._floorDoneTs = _doneMs; el._floorDoneApprox = false; }
+        if (ag._floorStartPerf > 0 && el._clockMin) {
+            var _s = Math.floor(Math.max(0, _doneMs - ag._floorStartPerf) / 1000);
+            el._clockMin.textContent = Math.floor(_s / 60) + 'm';
+            if (el._clockSec) el._clockSec.textContent = ':' + (_s % 60 < 10 ? '0' : '') + (_s % 60) + 's';
+        }
+    }
+}
+
+// 收官重放巡检（兜底自愈；轻节拍）：凡有完结记录（_floorTimings 含 finishedAt）的楼层，
+// 其钟表若仍停留建楼态（未变黑 / 无完结戳）→ 就地重放收官（黑钟 + 定格时长 + 完结时刻 + 定格饼图）。
+// 与一切正常收官路径幂等；未完结楼层永不触碰（活楼由秒针驱动）。
+var _clockHealAt = 0;
+function _healFinishedFloorClocks() {
+    var now = Date.now();
+    if (now - _clockHealAt < 2000) return;   // 节流（多入口调用共用）
+    _clockHealAt = now;
+    if (typeof cardPool === 'undefined' || !cardPool || !cardPool._cards) return;
+    var pool = window.parent && window.parent.__qqq_agentPool;
+    if (!pool) return;
+    var ids = Object.keys(cardPool._cards);
+    for (var ci = 0; ci < ids.length; ci++) {
+        var card = cardPool._cards[ids[ci]];
+        var ag = pool[ids[ci]];
+        if (!card || !card.floorDOM || !ag) continue;
+        var timings = ag._floorTimings || [];
+        for (var fKey in card.floorDOM) {
+            var fDom = card.floorDOM[fKey];
+            var el = fDom && fDom.aiEl;
+            if (!el || !el._clockBlock) continue;
+            var rec = null;
+            for (var ti = timings.length - 1; ti >= 0; ti--) {
+                if (timings[ti] && timings[ti].floorIndex === Number(fKey) && timings[ti].finishedAt) { rec = timings[ti]; break; }
+            }
+            if (!rec) continue;   // 未完结 → 不碰
+            // ★ 全量对账（不只看类名）：黑钟 + 定格文本 双项都对才算已收官——
+            //   碎片场景（跨面板重建把在飞楼渲染成黑态/陈旧时长等）残下的错文本也能纠回
+            var _msChk = (typeof rec.durationMs === 'number' && isFinite(rec.durationMs)) ? Math.max(0, rec.durationMs) : 0;
+            var _tsChk = Math.floor(_msChk / 1000);
+            var _expMin = Math.floor(_tsChk / 60) + 'm';
+            var _expSec = ':' + (_tsChk % 60 < 10 ? '0' : '') + _tsChk % 60 + 's';
+            var _okCls = (el._clockBlock.className === 'msg-ai-clock');
+            var _okTxt = (!el._clockMin || el._clockMin.textContent === _expMin) && (!el._clockSec || el._clockSec.textContent === _expSec);
+            if (el._floorDoneTs && _okCls && _okTxt) continue;   // 已正确收官
+            el._clockBlock.className = 'msg-ai-clock';
+            var _ms = (typeof rec.durationMs === 'number' && isFinite(rec.durationMs)) ? Math.max(0, rec.durationMs) : 0;
+            var _s = Math.floor(_ms / 1000);
+            if (el._clockMin) el._clockMin.textContent = Math.floor(_s / 60) + 'm';
+            if (el._clockSec) el._clockSec.textContent = ':' + (_s % 60 < 10 ? '0' : '') + _s % 60 + 's';
+            var _dt = Date.parse(rec.finishedAt);
+            if (isFinite(_dt) && _dt > 0) { el._floorDoneTs = _dt; el._floorDoneApprox = false; }
+            else { el._floorDoneTs = now; el._floorDoneApprox = true; }
+            if (el._clockCanvas && _ms > 0 && typeof drawPie === 'function') {
+                el._clockCanvas.style.visibility = 'visible';
+                drawPie(el._clockCanvas, { networkMs: rec.networkMs || 0, aiMs: rec.aiMs || 0, otherMs: rec.otherMs || 0, totalMs: _ms });
+            }
+        }
+    }
+}
+if (typeof window !== 'undefined') {
+    // 轻巡检：几毫秒级（已收官元素快跳）；漏网绿钟最多存活一个节拍
+    setInterval(_healFinishedFloorClocks, 3000);
+}
+
 function startFloorTimer(aiDiv, ag, resume) {
     ag._activeAiDiv = aiDiv;
     ag._floorEndSfxDone = false;  // ★ 新楼层开始 → 复位尘埃落定音效标记（每层一响）
@@ -423,6 +509,10 @@ function startFloorTimer(aiDiv, ag, resume) {
         //   Date.now() 全文档同轴，reload/跨 iframe 天然一致。
         ag._floorStartPerf = Date.now();
     }
+    // ★ 时钟多目标集登记：新纪元重置全集；续建（resume：跨面板重建/热重载/恢复）追加——
+    //   此后秒跳/费用/收官变黑一律遍历全集，活动指针被夺也不丢可见钟表（详多目标机说明）
+    if (_freshBase || !ag._floorClockEls) ag._floorClockEls = [];
+    if (aiDiv && ag._floorClockEls.indexOf(aiDiv) < 0) ag._floorClockEls.push(aiDiv);
     ag._floorCurrentTiming = null;
     // ★ 悬停第二行时间态（详 _initClockBlock/_floorTipTimeText）：新楼/续建 = 未完态
     //   （完结时刻复位）；起点 = 楼层开始时刻，文字一有变化由 _floorTextTs 接管
@@ -436,24 +526,27 @@ function startFloorTimer(aiDiv, ag, resume) {
     //   → 基准重置时旧桶一并清零（resume 续建＝基准连续，不清桶）；置后于阶段结算 = 结算出的旧纪元时长一并作废。
     if (_freshBase && ag._floorTiming) { ag._floorTiming.networkMs = 0; ag._floorTiming.aiMs = 0; }
     _initClockBlock(aiDiv);
-    var clockMin = aiDiv._clockMin;
-    var clockSec = aiDiv._clockSec;
-    var canvas = aiDiv._clockCanvas;
+    // ★ 多目标初绘：新入列副本（跨面板重建/恢复）与既有副本同帧复位到建楼态
+    var _els0 = _floorClockElsOf(ag);
     var elapsed = Math.max(0, Date.now() - ag._floorStartPerf);
     var totalS = Math.floor(elapsed / 1000);
     var min = Math.floor(totalS / 60);
     var sec = totalS % 60;
-    clockMin.textContent = min + 'm';
-    clockSec.textContent = ':' + (sec < 10 ? '0' : '') + sec + 's';
-    aiDiv._clockBlock.className = 'msg-ai-clock clock-ai';
-    canvas.style.visibility = 'hidden';
-    if (aiDiv._clockCost) {
-        aiDiv._clockCost.textContent = '0.00 ge';
-        aiDiv._clockCost.style.display = 'inline';
-        aiDiv._clockCost._rawGe = null;
-        aiDiv._clockCost._houses = null;
-        aiDiv._clockCost._floorNum = null;
-        aiDiv._clockCost._passby = null;
+    for (var _e0 = 0; _e0 < _els0.length; _e0++) {
+        var _el0 = _els0[_e0];
+        if (!_el0 || !_el0._clockBlock) continue;
+        if (_el0._clockMin) _el0._clockMin.textContent = min + 'm';
+        if (_el0._clockSec) _el0._clockSec.textContent = ':' + (sec < 10 ? '0' : '') + sec + 's';
+        _el0._clockBlock.className = 'msg-ai-clock clock-ai';
+        if (_el0._clockCanvas) _el0._clockCanvas.style.visibility = 'hidden';
+        if (_el0._clockCost) {
+            _el0._clockCost.textContent = '0.00 ge';
+            _el0._clockCost.style.display = 'inline';
+            _el0._clockCost._rawGe = null;
+            _el0._clockCost._houses = null;
+            _el0._clockCost._floorNum = null;
+            _el0._clockCost._passby = null;
+        }
     }
     ag._xPieShown = false;
     ag._xLastN = 0; ag._xLastD = 0; ag._xLastT = 0;
@@ -474,10 +567,15 @@ function startFloorTimer(aiDiv, ag, resume) {
             if (_ag._floorTimerId === _myId) _ag._floorTimerId = null;
             return;
         }
-        // ★ 守卫：用本地闭包 aiDiv 而非 _ag._activeAiDiv，防压缩/恢复路径篡改
-        //   若 aiDiv 已脱离 DOM（Card 被驱逐），自停 timer
+        // ★ 守卫（多目标版）：全集全部脱离 DOM（Card 被驱逐/整卡重建）才自停——
+        //   单个元素被替换不再误杀整层钟表（旧守卫盯本地闭包 aiDiv，元素一换即死）
         //   ★ 只清自己的 id（旧实现清共享字段 _ag._floorTimerId —— 会误杀别的活跃钟/null 掉共享字段）
-        if (!aiDiv || !aiDiv._clockBlock || !aiDiv._clockBlock.isConnected) {
+        var _els = _floorClockElsOf(_ag);
+        var _anyLive = false;
+        for (var _ec = 0; _ec < _els.length; _ec++) {
+            if (_els[_ec] && _els[_ec]._clockBlock && _els[_ec]._clockBlock.isConnected) { _anyLive = true; break; }
+        }
+        if (!_anyLive) {
             clearInterval(_myId);
             if (_ag._floorTimerId === _myId) _ag._floorTimerId = null;
             return;
@@ -486,28 +584,40 @@ function startFloorTimer(aiDiv, ag, resume) {
         var totalS = Math.floor(elapsed / 1000);
         var min = Math.floor(totalS / 60);
         var sec = totalS % 60;
-        clockMin.textContent = min + 'm';
-        clockSec.textContent = ':' + (sec < 10 ? '0' : '') + sec + 's';
         // ★ 实时分段（详 _liveSegs）：累计 + 进行中阶段未入账时长 → 饼图与悬停第一行每秒自跳
         var _seg = _liveSegs(_ag, elapsed);
         var n = _seg.networkMs;
         var d = _seg.aiMs;
         var t = Math.max(0, elapsed - n - d);   // 余量段 = 未入账余量（工具/本地处理）——钟色 tool 判据
-        if (!_ag._xPieShown && (n > 0 || d > 0 || t > 0)) { _ag._xPieShown = true; canvas.style.visibility = 'visible'; }
-        if (!_ag._xPieShown) return;
+        if (!_ag._xPieShown && (n > 0 || d > 0 || t > 0)) _ag._xPieShown = true;
         var state = 'ai';
         if (t > _ag._xLastT) state = 'tool';
         else if (d > _ag._xLastD) state = 'ai';
         else if (n > _ag._xLastN) state = 'network';
         _ag._xLastN = n; _ag._xLastD = d; _ag._xLastT = t;
-        aiDiv._clockBlock.className = 'msg-ai-clock clock-' + state;
-        drawPie(canvas, { networkMs: n, aiMs: d, otherMs: t, totalMs: elapsed });
-        // 2026-08-12: clock color warning on silence (no progress = no token/tool/cost, not tool execution)
-        // ★ 工具执行期间 _toolExecActive=true → 跳过 silence 检查（长工具如 git_fetch/pack 是正常进展，非停滞）
+        var _silenceS = 0;
         if (!_ag._toolExecActive) {
-            var _silenceS = _ag._lastProgressPerf ? (performance.now() - _ag._lastProgressPerf) / 1000 : 0;
-            if (_silenceS > 300) aiDiv._clockBlock.classList.add('clock-stall');
-            else if (_silenceS > 120) aiDiv._clockBlock.classList.add('clock-slow');
+            // 2026-08-12: clock color warning on silence (no progress = no token/tool/cost, not tool execution)
+            // ★ 工具执行期间 _toolExecActive=true → 跳过 silence 检查（长工具如 git_fetch/pack 是正常进展，非停滞）
+            _silenceS = _ag._lastProgressPerf ? (performance.now() - _ag._lastProgressPerf) / 1000 : 0;
+        }
+        // ★ 多目标书写：秒值/阶段色/饼图/停滞色 一次遍历写全本层所有钟表副本
+        for (var _ep = 0; _ep < _els.length; _ep++) {
+            var _el = _els[_ep];
+            if (!_el || !_el._clockBlock) continue;
+            if (_el._floorDoneTs) continue;   // 已收官钉：绝不再染回建楼色
+            if (_el._clockMin) _el._clockMin.textContent = min + 'm';
+            if (_el._clockSec) _el._clockSec.textContent = ':' + (sec < 10 ? '0' : '') + sec + 's';
+            if (!_ag._xPieShown) continue;
+            _el._clockBlock.className = 'msg-ai-clock clock-' + state;
+            if (_el._clockCanvas) {
+                _el._clockCanvas.style.visibility = 'visible';
+                drawPie(_el._clockCanvas, { networkMs: n, aiMs: d, otherMs: t, totalMs: elapsed });
+            }
+            if (!_ag._toolExecActive) {
+                if (_silenceS > 300) _el._clockBlock.classList.add('clock-stall');
+                else if (_silenceS > 120) _el._clockBlock.classList.add('clock-slow');
+            }
         }
     }, 1000);
     ag._floorTimerId = _myId;
@@ -565,19 +675,28 @@ function stopFloorTimer(timing, ag) {
     var totalS = Math.floor(elapsed / 1000);
     var min = Math.floor(totalS / 60);
     var sec = totalS % 60;
+    // ★ 收官 = 多目标全集变黑定格：活动指针可能已被切 quest/跨面板事件夺走——
+    //   旧单指针写法会把「变黑+定格」打到别的元素上，屏上钟表永远停在绿色建楼态（客户实锤）；
+    //   此处恒遍历本层钟表全集（兜底并入 _activeAiDiv），元素打「已收官」钉，此后迟到书写不再染绿。
+    var _elsDone = _floorClockElsOf(ag);
     var aiDiv = ag._activeAiDiv;
-    if (aiDiv) { aiDiv._floorDoneTs = _doneMs; aiDiv._floorDoneApprox = false; }   // ★ 完结时刻 → 悬停第二行转「年月日+时分秒」
-    if (aiDiv && aiDiv._clockBlock) {
-        aiDiv._clockBlock.className = 'msg-ai-clock';  // ★ 电子钟变黑 = 尘埃落定 → 音效权威触发点
+    if (aiDiv && _elsDone.indexOf(aiDiv) < 0) _elsDone = _elsDone.concat([aiDiv]);
+    var _tmDone = timing || { networkMs: 0, aiMs: 0, otherMs: 0 };
+    _tmDone.totalMs = elapsed;
+    for (var _ed = 0; _ed < _elsDone.length; _ed++) {
+        var _elD = _elsDone[_ed];
+        if (!_elD || !_elD._clockBlock) continue;
+        _elD._floorDoneTs = _doneMs;   // ★ 完结时刻 → 悬停第二行转「年月日+时分秒」；收官钉
+        _elD._floorDoneApprox = false;
+        _elD._clockBlock.className = 'msg-ai-clock';  // ★ 电子钟变黑 = 尘埃落定 → 音效权威触发点
+        if (_elD._clockMin) _elD._clockMin.textContent = min + 'm';
+        if (_elD._clockSec) _elD._clockSec.textContent = ':' + (sec < 10 ? '0' : '') + sec + 's';
+        if (_elD._clockCanvas && elapsed > 0) {
+            _elD._clockCanvas.style.visibility = 'visible';
+            drawPie(_elD._clockCanvas, _tmDone);
+        }
     }
     _playFloorEndSfx(ag);
-    if (aiDiv && aiDiv._clockMin && aiDiv._clockCanvas) {
-        aiDiv._clockMin.textContent = min + 'm';
-        aiDiv._clockSec.textContent = ':' + (sec < 10 ? '0' : '') + sec + 's';
-        var tm = timing || { networkMs: 0, aiMs: 0, otherMs: 0 };
-        tm.totalMs = elapsed;
-        if (elapsed > 0) { aiDiv._clockCanvas.style.visibility = 'visible'; drawPie(aiDiv._clockCanvas, tm); }
-    }
     // ★ 不再清空 _activeAiDiv：它是 agent 与 Card DOM 的永久绑定，切 quest 时 switchQuest 负责重绑
     var durationMs = Math.round(elapsed);
     var record = {
@@ -976,32 +1095,39 @@ function _tickCometClocks() {
         var bj = localBQ[qj] || (reg && reg[qj] && reg[qj].stopState === 'sending');
         if (!bj) continue;
         var aj = pool[qj];
-        var aid = aj._activeAiDiv;
-        if (!aid || !aid._clockBlock || !aid._clockBlock.isConnected) continue;
         // ★ 守卫（2026-09-06）：agent 未 startFloorTimer（perf=0/未设）→ 跳过，防 epoch/NaN 值写屏（灰饼源）
         if (!(aj._floorStartPerf > 0)) continue;
+        // ★ 多目标书写（详文件内多目标机）：恒遍历本层全部钟表副本——
+        //   活动指针被切 quest/跨面板重建等事件夺走时，屏上留存的副本仍有人续画，不冻结
+        var _aels = _floorClockElsOf(aj);
         var fela = Math.max(0, now - aj._floorStartPerf);
         var fts = Math.floor(fela / 1000);
-        if (aid._clockMin) aid._clockMin.textContent = Math.floor(fts / 60) + 'm';
-        if (aid._clockSec) aid._clockSec.textContent = ':' + (fts % 60 < 10 ? '0' : '') + (fts % 60) + 's';
         var _seg2 = _liveSegs(aj, fela);
         var n2 = _seg2.networkMs;
         var d2 = _seg2.aiMs;
         var t2 = Math.max(0, fela - n2 - d2);
-        if (!aj._xPieShown && (n2 > 0 || d2 > 0 || t2 > 0)) {
-            aj._xPieShown = true;
-            if (aid._clockCanvas) aid._clockCanvas.style.visibility = 'visible';
+        if (!aj._xPieShown && (n2 > 0 || d2 > 0 || t2 > 0)) aj._xPieShown = true;
+        var st2 = null;
+        if (aj._xPieShown) {
+            var xn = aj._xLastN || 0; var xd = aj._xLastD || 0; var xt = aj._xLastT || 0;
+            st2 = 'ai';
+            if (t2 > xt) st2 = 'tool';
+            else if (d2 > xd) st2 = 'ai';
+            else if (n2 > xn) st2 = 'network';
+            aj._xLastN = n2; aj._xLastD = d2; aj._xLastT = t2;
         }
-        if (!aj._xPieShown) continue;
-        var xn = aj._xLastN || 0; var xd = aj._xLastD || 0; var xt = aj._xLastT || 0;
-        var st2 = 'ai';
-        if (t2 > xt) st2 = 'tool';
-        else if (d2 > xd) st2 = 'ai';
-        else if (n2 > xn) st2 = 'network';
-        aj._xLastN = n2; aj._xLastD = d2; aj._xLastT = t2;
-        if (aid._clockBlock) aid._clockBlock.className = 'msg-ai-clock clock-' + st2;
-        if (typeof drawPie === 'function' && aid._clockCanvas) {
-            drawPie(aid._clockCanvas, { networkMs: n2, aiMs: d2, otherMs: t2, totalMs: fela });
+        for (var _a2 = 0; _a2 < _aels.length; _a2++) {
+            var aid = _aels[_a2];
+            if (!aid || !aid._clockBlock || !aid._clockBlock.isConnected) continue;
+            if (aid._floorDoneTs) continue;   // 已收官钉：迟到心跳不再染回建楼色
+            if (aid._clockMin) aid._clockMin.textContent = Math.floor(fts / 60) + 'm';
+            if (aid._clockSec) aid._clockSec.textContent = ':' + (fts % 60 < 10 ? '0' : '') + (fts % 60) + 's';
+            if (!aj._xPieShown) continue;
+            aid._clockBlock.className = 'msg-ai-clock clock-' + st2;
+            if (typeof drawPie === 'function' && aid._clockCanvas) {
+                aid._clockCanvas.style.visibility = 'visible';
+                drawPie(aid._clockCanvas, { networkMs: n2, aiMs: d2, otherMs: t2, totalMs: fela });
+            }
         }
     }
 }

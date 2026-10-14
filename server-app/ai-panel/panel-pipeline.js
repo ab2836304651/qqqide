@@ -133,8 +133,8 @@ function _stopHealFire(_ag) {
     try { if (_hqid && typeof _saveAgentQuestData === 'function') _saveAgentQuestData(_hqid, _ag, _ag._currentFloorNum).catch(function () { }); } catch (_) { }
     try { if (typeof setStreaming === 'function') setStreaming(false); } catch (_) { }
     try { if (typeof _restorePanelAgentHome === 'function') _restorePanelAgentHome(); } catch (_) { }
-    try {                                                 // 队列 = 用户财产：排水接续（与 finally 同条件）
-        if (_queue && _queue.length > 0 && _activeAgent === _ag && !_queuePaused && _ag._stopState !== 'fatal') {
+    try {                                                 // 队列 = 用户财产：排水接续（与 finally 同规——恒读本任务 agent 自身队列字段，后台完成任务同接续）
+        if (_ag && _ag._queue && _ag._queue.length > 0 && !_ag._queuePaused && _ag._stopState !== 'fatal') {
             if (typeof _triggerQueueSend === 'function') _triggerQueueSend(_hqid, _ag);
         }
     } catch (_) { }
@@ -1595,17 +1595,8 @@ async function _executeSend(intent) {
                             var _bgAiEl = _bgCard.floorDOM && _bgCard.floorDOM[floorNum] ? _bgCard.floorDOM[floorNum].aiEl : null;
                             if (_bgAiEl) _bgAiEl.classList.remove('card-building');
                         }
-                        var _bgAiDiv2 = agent && agent._activeAiDiv;
-                        if (_bgAiDiv2 && _bgAiDiv2._clockBlock) {
-                            _bgAiDiv2._clockBlock.className = 'msg-ai-clock';
-                            // ★ wall-clock（2026-09-06）：与 startFloorTimer 同轴；未 start 跳过防 epoch 值写屏
-                            if (agent._floorStartPerf > 0) {
-                                var _elapsed3 = Math.max(0, Date.now() - agent._floorStartPerf);
-                                var _durS3 = Math.floor(_elapsed3 / 1000);
-                                if (_bgAiDiv2._clockMin) _bgAiDiv2._clockMin.textContent = Math.floor(_durS3 / 60) + 'm';
-                                if (_bgAiDiv2._clockSec) _bgAiDiv2._clockSec.textContent = ':' + (_durS3 % 60 < 10 ? '0' : '') + (_durS3 % 60) + 's';
-                            }
-                        }
+                        // ★ 后台失败黑钟：多目标全集变黑（详 panel-clock「楼层时钟多目标集」）
+                        if (typeof _blackenFloorClockEls === 'function') { try { _blackenFloorClockEls(agent); } catch (_) { } }
                         agent._floorTimings = agent._floorTimings || [];
                         agent._floorTimings.push({
                             floorIndex: agent._ctx ? agent._ctx.totalFloors : 0,
@@ -1704,20 +1695,9 @@ async function _executeSend(intent) {
         }
         if (agent) {
             if (agent._activeAiDiv) {
-                if (agent._activeAiDiv._clockBlock) agent._activeAiDiv._clockBlock.className = 'msg-ai-clock';
-                // ★ 楼层终结收尾兜底（悬停第二行）：未走 stopFloorTimer 的收尾路径（headless 等）在此补记完结时刻
-                if (!agent._activeAiDiv._floorDoneTs) { agent._activeAiDiv._floorDoneTs = Date.now(); agent._activeAiDiv._floorDoneApprox = false; }
-                // ★ wall-clock（2026-09-06）：同 startFloorTimer 轴；未 start（perf=0）只复位样式不写数值
-                if (agent._floorStartPerf > 0) {
-                    var _elapsed = Math.max(0, Date.now() - agent._floorStartPerf);
-                    var _totalS = Math.floor(_elapsed / 1000);
-                    var _min = Math.floor(_totalS / 60);
-                    var _sec = _totalS % 60;
-                    if (agent._activeAiDiv._clockMin) {
-                        agent._activeAiDiv._clockMin.textContent = _min + 'm';
-                        agent._activeAiDiv._clockSec.textContent = ':' + (_sec < 10 ? '0' : '') + _sec + 's';
-                    }
-                }
+                // ★ 楼层终结收尾兜底（多目标版）：全副本变黑 + 定格时长；未走 stopFloorTimer 的收尾
+                //   路径（headless 等）在此补记完结时刻——幂等，正常收官后再跑一遍零差异
+                if (typeof _blackenFloorClockEls === 'function') { try { _blackenFloorClockEls(agent); } catch (_) { } }
                 agent._activeAiDiv._renderScheduled = false;
                 agent._activeAiDiv = null;
             }
@@ -1742,7 +1722,11 @@ async function _executeSend(intent) {
         //   草稿保护无存在必要）——仅人工暂停（_queuePausedManual）阻止排水。
         // ★ 2026-09-06: fatal 态不排水（网络中断实锤：fatal 后立即排水 → 下一条 shift 出队 →
         //   fatal 闸门拦截 → 消息永久丢失）。待命队列，等用户点红框恢复成功后此条件自然放行续发。
-        if (_queue && _queue.length > 0 && _activeAgent === agent && !_queuePaused && agent._stopState !== 'fatal') {
+        // ★ 2026-10-14 根治（后台 quest 完成不续发队列）：守卫恒读「本任务 agent」自身字段——
+        //   旧实现经 _queue/_queuePaused 访问器 + _activeAgent===agent 判定，二者全部解析到面板
+        //   当前 quest：任务被切到后台后完成时守卫恒 false → 队列永不接续（消息原地变僵尸）。
+        //   排水仍经 _triggerQueueSend(qid, agent) 显式目标路径直入该 quest 链（_enqueueSend）。
+        if (agent && agent._queue && agent._queue.length > 0 && !agent._queuePaused && agent._stopState !== 'fatal') {
             // ★ 2026-10-03：显式携目标 quest + 队列来源 agent——后台任务（qid ≠ 面板活跃 quest）排水
             //   必须发给运行任务的 quest（旧实现经 sendMessage 用面板 questActiveId → 消息发进错误 quest）
             _triggerQueueSend(qid, agent);

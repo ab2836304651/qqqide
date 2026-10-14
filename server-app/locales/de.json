@@ -261,7 +261,6 @@
             "removeTitle": "Projekt entfernen",
             "removeConfirm": "Soll „{n}“ wirklich aus der AI-Ansicht entfernt werden?",
             "removeBtn": "Entfernen",
-            "removeAsk": "„{n}“ entfernen?",
             "openElsewhere": "⚠️ Dieses Projekt ist bereits in einem anderen Fenster als Hauptordner geöffnet",
             "clearedBusy": "⚠️ Der Hauptordner wird von einem anderen Fenster verwendet. Das AI-Viewports wurde für ein sauberes Fenster geleert.",
             "filterPh": "Filtern...",
@@ -427,6 +426,10 @@
         "timelineNoRoot": "Das Projekt-Stammverzeichnis dieser Datei kann nicht ermittelt werden, die Zeitleiste ist nicht verfügbar",
         "timelineOpenFail": "Fehler beim Öffnen des Zeitachsenfensters, bitte versuchen Sie es später erneut",
         "minimap": "Minikarte",
+        "run": "Ausführen",
+        "runNoInterp": "Integrierter Interpreter nicht bereit (fehlende Komponenten)",
+        "runNoTerm": "Terminal kann nicht geöffnet werden",
+        "runFail": "Ausführung fehlgeschlagen",
         "tabs": {
             "close": "Tab schließen",
             "closeOthers": "Andere Tabs schließen",
@@ -838,6 +841,8 @@
             "showKey": "Anzeigen/Ausblenden",
             "model": "Modellname",
             "modelPh": "Modellname aus der Dokumentation des Anbieters",
+            "maxTokens": "Max. Ausgabe-Tokens (optional)",
+            "maxTokensPh": "Leer = Anbieter-Standard (empfohlen)",
             "fetchModels": "Modellliste abrufen",
             "probeLocal": "Lokale Modelle erkennen",
             "needBase": "Bitte zuerst die API-Adresse eingeben",
@@ -924,7 +929,8 @@
         "waitNew": "Die aktuelle AI-Antwort steht noch aus. Bitte warten Sie, bevor Sie eine neue Aufgabe erstellen.",
         "recoverPrefix": "Netzwerkverbindung wiederhergestellt. Unterbrochene Verlaufseinträge:",
         "recoverSuffix": "｜Bitte setzen Sie die ursprüngliche Aufgabe basierend auf dem vollständigen Konversationskontext fort.",
-        "retryExhausted": "Nach 3 Wiederholungen immer noch kein Erfolg. Möglicherweise sind das Budget/Quota erschöpft oder ein Serverfehler liegt vor. Bitte versuchen Sie es später erneut.",
+        "retryExhausted": "Nach 3 Wiederholungsversuchen immer noch kein Erfolg. Bitte versuchen Sie es später erneut. Bei anhaltenden Fehlern überprüfen Sie bitte Ihre Internetverbindung, Ihr Konto oder die Einstellungen des Dienstanbieters.",
+        "retryExhaustedDetail": "Nach 3 Wiederholungen erfolglos — letzter Fehler: {msg}",
         "pathIncompatible": "Pfad enthält inkompatible Zeichen, Anhängen nicht möglich",
         "bulletTrunc": "\n\n... [Mitte abgeschnitten, ursprünglich {0}KB] ...\n\n",
         "exhaustedMsg": "⚠ Maximale Anzahl an Tool-Aufrufen (200) erreicht, aber die AI konnte keine endgültige Antwort generieren. Der Konversationskontext bleibt erhalten, Sie können weitere Fragen stellen.",
@@ -1021,7 +1027,8 @@
             "intDone": "── Strg+C · {0} Prozess(e) beendet ──",
             "intIdle": "── Strg+C · Kein Befehl wird ausgeführt ──",
             "intSig": "── Strg+C · Interrupt-Signal gesendet ──",
-            "intRestart": "── Ctrl+C · Shell-Upgrade erfordert Neustart der Instanz ──"
+            "intRestart": "── Ctrl+C · Shell-Upgrade erfordert Neustart der Instanz ──",
+            "dropNoPath": "── {0} Elemente ignoriert (kein lokaler Pfad) ──"
         },
         "git": {
             "refresh": "Aktualisieren",
@@ -1288,7 +1295,9 @@
             "intFail": "[Interrupt fehlgeschlagen] {0}",
             "terminated": "Beendet · Kann mit Restart neu gestartet werden",
             "termLine": "── Sitzung beendet (Neustart möglich) ──",
-            "deadHint": "Bereits im Beendigungsstatus · Restart startet neu"
+            "deadHint": "Bereits im Beendigungsstatus · Restart startet neu",
+            "dropNoPath": "── {0} Elemente ignoriert (kein lokaler Pfad) ──",
+            "dropIdle": "Sitzung nicht bereit · Ziehen zum Einfügen nicht möglich"
         },
         "dsecret": {
             "targetProject": "Zielprojekt",
@@ -2230,6 +2239,12 @@
             "saveConsole": "Konsolenprotokoll speichern",
             "logFile": "Protokolldatei",
             "saveFile": "Datei speichern"
+        },
+        "browserHost": {
+            "title": "qd (qqqide) Browser",
+            "startHosted": "Dieses Fenster wird von qqqide verwaltet: Die KI führt darüber Webaktionen aus.",
+            "startMonitor": "Während einer Aufgabe sehen Sie hier den Live-Fortschritt; wenn Sie gebraucht werden (z. B. zum Anmelden), wartet die KI hier auf Sie.",
+            "startHint": "Das Schließen dieses Fensters beendet den Browser; die Anmeldung bleibt für das nächste Mal erhalten."
         },
         "browser": {
             "openFailTitle": "Browser konnte nicht automatisch geöffnet werden — qd (qqqide)",

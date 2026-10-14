@@ -633,11 +633,13 @@ function _firstMatchOf(t){try{if(!_hl||!t)return '';var re=new RegExp(_hl.source
 window.addEventListener('message',function(e){
   if(e.data&&e.data.type==='qqqide-theme-change'){var t=e.data.theme||e.data.dark;if(t!==undefined)document.documentElement.setAttribute('data-theme',t?'dark':'');else ts()}
   if(e.data&&e.data.type==='qqqide-search-set-scope'){
-    var newPath=e.data.path||'';
+    var d=e.data,newPath=d.path||'';
+    // ★ 顺序定：先回填再报标题——标题带的就是回填后的词（恢复的卡标题不丢查询上下文）
+    if(typeof d.query==='string')Q.value=d.query;      // 只回填（恢复=停空闲态，回车才搜）
     if(newPath&&newPath!==SP.value){SP.value=newPath;_scopePath=newPath.trim();_lastQuery='';
-      try{window.parent.postMessage({type:'qqqide-search-title',path:newPath.trim(),query:''},'*')}catch(_){}}
-    if(e.data.query){Q.value=e.data.query;_add(0,e.data.query);trg()}
-    if(Q.value)trg();Q.focus()
+      try{window.parent.postMessage({type:'qqqide-search-title',path:newPath.trim(),query:Q.value},'*')}catch(_){}}
+    if(d.run===true&&Q.value){_add(0,Q.value);trg()}   // 唯一自动搜索开关（显式搜索/大搜索透传）
+    if(d.focus===true)Q.focus()
   }
 });
 // ★ F6: 历史加载不再等主项目就绪（OS 库零依赖）; _prjRoot 仅用于 SP 默认值 + only.sq3 迁移

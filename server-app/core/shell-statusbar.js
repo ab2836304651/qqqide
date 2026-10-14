@@ -17,7 +17,8 @@
   var $onl = document.getElementById('qqq-status-online');
   var $clk = document.getElementById('qqq-status-clock');
   if ($ver) $ver.textContent = 'v' + (boot.version || '?');
-	if ($onl) $onl.textContent = '0';
+	// 在线人 = 登录专属：首屏未定态恒 '--'（登录态恢复后由在线模块补真值；未登录恒停 '--'）
+	if ($onl) $onl.textContent = '--';
 		// ═══ 赞助商轮换（状态栏左下角）— 大20s/中10s/小5s，瞬间替换文字（无滚动动画，防视觉分散）═══
 	// 数据源: GET /api/sponsor/current（三档位当前小时胜出者；无人竞拍 → 默认成都知佳）
 	// ★ 2026-10-02 请求治理：拉取限频 10 分钟（数据每整点才轮换，60s→10min；"成功才计门"——
@@ -102,7 +103,9 @@
 	}
 
 	// ═══ 全球在线人数 — fetch 极轻轮询（30字节/5分钟，跨窗口稳定）═══
-	// ★ 隐藏链接：hover 零外观零 tooltip，点击仍打开在线用户面板
+	// ★ 登录门（服务端 Auth 唯一裁决）：在线人 = 登录专属——未登录/授权失效 → 恒 '--' 零请求；
+	//   未登录点击 '--' → 直接拉起登录流程（外部浏览器），登录成功自动补拉 + 自动开面板
+	// ★ 隐藏链接：hover 零外观零 tooltip，点击 = 已登录开面板 / 未登录导流登录
 	(function () {
 		if (!$onl) return;
 
@@ -118,6 +121,28 @@
 		var _onlShowBal = false;   // ★ 隐藏功能：弹窗开启时连按 3 下 q → day 右侧显示「余额」列（服务端 balance_ge 四舍五入取整）
 		var _onlQCount = 0;        // 连按计数（超时/弹窗关闭清零）
 		var _onlQAt = 0;
+		// ★ 登录门状态机：未登录/授权失效 → 恒 '--' 零请求；点击 '--' 导流登录；登录成功自动补拉 + 待开面板兑现
+		var _onlAuthFail = false;    // 本会话收过 401（token 失效/被拒）→ 按未登录处理，直至下次登录态变更
+		var _onlLogged = false;      // 上次已知登录态（onStateChange 差分；仅真变化才补拉/收面板）
+		var _onlPendingOpen = false; // 未登录点击导流 → 登录成功后自动开面板
+		var _onlPendingAt = 0;       // 点击时刻（待开意图 10 分钟内有效）
+		function _onlToken() {
+			try { return (window.qqqLogin && window.qqqLogin.getAuthToken()) || ''; } catch (e) { return ''; }
+		}
+		function _onlIsLoggedIn() {
+			try { return !!(window.qqqLogin && window.qqqLogin.isLoggedIn()); } catch (e) { return false; }
+		}
+		function _onlLogin() {
+			try { if (window.qqqLogin && window.qqqLogin.login) window.qqqLogin.login(); } catch (e) { }
+		}
+		function _setOnl(txt) { if ($onl && $onl.textContent !== txt) $onl.textContent = txt; } // 值同零写
+		function _onlAuthExpired() {
+			_onlAuthFail = true;
+			_setOnl('--');
+			_setTot('--');
+			_onlUsersCache = null;
+			closeOnlineUsers(); // 面板开着也一并收回（陈旧明细绝不留屏）
+		}
 		// ★ 定宽列配比（2026-10-05 用户定案；勿随手改）：table-layout:fixed 由 <colgroup> 百分比驱动——
 		//   任何语言列宽恒一致、永不横向滚动条。值 = 同引擎实测：13 语言最坏列头/数据 + 5px 滚动条在场余量；
 		//   10 列 = 含余额列（三连 q 展开）/ 9 列 = 余额隐藏。改值必须重跑实测（列内文本恒不得裁切）。
@@ -126,16 +151,20 @@
 
 		function fetchOnline(force) {
 			if (!force && document.hidden) return; // ★ 2026-10-02: 隐藏窗零请求（回前台 visibilitychange 补拉）
+			// ★ 登录门：未登录/授权失效 → 恒 '--' 零请求（先算门再过节流门——登录瞬间首拉不被吃）
+			var _tok = _onlAuthFail ? '' : _onlToken();
+			if (!_tok) { _setOnl('--'); return; }
 			var now = Date.now();
 			if (!force && now - _onlLastFetch < 240000) return;
 			_onlLastFetch = now;
-			fetch('https://direct-cn.gh555.com/api/qqqide/online-total', { cache: 'no-cache' })
-				.then(function (r) { if (!r.ok) return null; return r.json(); })
+			fetch('https://direct-cn.gh555.com/api/qqqide/online-total', { cache: 'no-cache', headers: { 'Authorization': 'Bearer ' + _tok } })
+				.then(function (r) { if (!r.ok) { if (r.status === 401) _onlAuthExpired(); return null; } return r.json(); })
 				.then(function (data) {
 					if (!data || !data.ok) return;
+					_onlAuthFail = false;
 					if (typeof data.total === 'number') {
 						var _ot = data.total > 0 ? data.total.toLocaleString() : '0';
-						if ($onl.textContent !== _ot) $onl.textContent = _ot; // ★ 值同零写（2026-10-02 审计）
+						_setOnl(_ot); // ★ 值同零写（2026-10-02 审计）
 					}
 					// ★ 弹窗首行：当前人数（与左下角同值）+ ※最近24小时平均
 					var $now = document.getElementById('qqq-onl-now');
@@ -289,6 +318,9 @@
 		}
 
 		function openOnlineUsers() {
+			// ★ 登录门纵深：未授权恒不开面板（点击入口已导流登录）
+			var _tok0 = _onlAuthFail ? '' : _onlToken();
+			if (!_tok0) { _setOnl('--'); return; }
 			if (!_onlOverlay) buildOnlineUsersPanel();
 			if (_onlUsersOpen) { closeOnlineUsers(); return; }
 			_onlUsersOpen = true;
@@ -402,15 +434,17 @@
 				if (_onlUsersCache && _onlUsersCache.length) renderOnlineUsers(_onlUsersCache);
 			}
 		});
-
 		function fetchOnlineUsers() {
-			if (_onlFetching) return;
-			_onlFetching = true;
-			var $body = document.getElementById('qqq-onl-body');
-			if ($body) $body.innerHTML = '<div class="qqq-onl-msg">' + _T('shell.onl.loading', '加载中...') + '</div>';
-
-			fetch('https://direct-cn.gh555.com/api/qqqide/online-users', { cache: 'no-cache' })
-				.then(function (r) { if (!r.ok) return null; return r.json(); })
+			if (_onlFetching) return;
+			// ★ 登录门：未授权零请求（点击入口已先导流登录；此处为纵深兜底）
+			var _tok = _onlAuthFail ? '' : _onlToken();
+			if (!_tok) { _setOnl('--'); return; }
+			_onlFetching = true;
+			var $body = document.getElementById('qqq-onl-body');
+			if ($body) $body.innerHTML = '<div class="qqq-onl-msg">' + _T('shell.onl.loading', '加载中...') + '</div>';
+
+			fetch('https://direct-cn.gh555.com/api/qqqide/online-users', { cache: 'no-cache', headers: { 'Authorization': 'Bearer ' + _tok } })
+				.then(function (r) { if (!r.ok) { if (r.status === 401) _onlAuthExpired(); return null; } return r.json(); })
 				.then(function (data) {
 					_onlFetching = false;
 					if (!data || !data.ok || !$body) return;
@@ -428,7 +462,14 @@
 				});
 		}
 
-		$onl.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); openOnlineUsers(); });
+		$onl.addEventListener('click', function (e) {
+			e.preventDefault(); e.stopPropagation();
+			// ★ 登录门：未登录/授权失效 → 直接拉起登录流程；登录成功自动开面板（待开意图 10 分钟内有效）
+			if (_onlToken() && !_onlAuthFail) { openOnlineUsers(); return; }
+			_onlPendingOpen = true;
+			_onlPendingAt = Date.now();
+			_onlLogin();
+		});
 
 		// ═══ 启动包监控 a 区域渲染 — 唯一渲染者 = core/shell-mem-hover.js（icon+内存+CPU 文字全量接管，2026-08-30）═══
 		// 2026-08-30 修复：此处曾用 $mem.textContent 整体覆盖 → 图标与 CPU 文字被清空只剩裸数字（用户实锤），双写已删
@@ -457,13 +498,17 @@
 			try { if (window.qqqLogin) target = window.qqqLogin.getPhone() || ''; } catch (e) { }
 			target = maskPhoneLikeServer(target);
 			if (!target) { _setTot('--'); return; }
+			// ★ 登录门：未登录/授权失效 → 恒 '--' 零请求（与在线数同门）
+			var _tok = _onlAuthFail ? '' : _onlToken();
+			if (!_tok) { _setTot('--'); return; }
 			if (!force && document.hidden) return; // ★ 2026-10-02: 隐藏窗零请求（回前台 visibilitychange 补拉）
 			var _mtNow = Date.now();
 			if (!force && _mtNow - _myTotalLastFetch < 240000) return;
 			_myTotalLastFetch = _mtNow;
-			fetch('https://direct-cn.gh555.com/api/qqqide/online-users', { cache: 'no-cache' })
-				.then(function (r) { if (!r.ok) return null; return r.json(); })
+			fetch('https://direct-cn.gh555.com/api/qqqide/online-users', { cache: 'no-cache', headers: { 'Authorization': 'Bearer ' + _tok } })
+				.then(function (r) { if (!r.ok) { if (r.status === 401) _onlAuthExpired(); return null; } return r.json(); })
 				.then(function (data) {
+					if (data && data.ok) _onlAuthFail = false;
 					if (!data || !data.ok || !data.users || !data.users.length) return;
 					for (var i = 0; i < data.users.length; i++) {
 						if (data.users[i].phone === target && typeof data.users[i].total_m === 'number') {
@@ -477,7 +522,23 @@
 		}
 		// 登录状态变化 → 刷新（登录/登出都走这里）；★ 包装吞掉回调参数（onStateChange 会传 loggedIn/phoneTail 等实参——
 		// 直接挂 fetchMyTotal 会把 loggedIn 当作 force=true 绕过节流门，2026-10-01 自审修复）
-		try { if (window.qqqLogin && window.qqqLogin.onStateChange) window.qqqLogin.onStateChange(function () { fetchMyTotal(); }); } catch (e) { }
+		// ★ 登录门：登录 → 补拉在线数；登出/失效 → 恒 '--' + 收回面板；点击导流的待开面板在登录成功后自动开
+		try {
+			if (window.qqqLogin && window.qqqLogin.onStateChange) window.qqqLogin.onStateChange(function () {
+				_onlAuthFail = false; // 新登录态 = 新 token：授权失效标记复位（先复位，下方补拉即刻可用新 token）
+				fetchMyTotal();
+				var _logged = _onlIsLoggedIn();
+				if (_logged !== _onlLogged) {
+					_onlLogged = _logged;
+					if (_logged) { fetchOnline(true); }
+					else { _setOnl('--'); _onlUsersCache = null; closeOnlineUsers(); }
+				}
+				if (_onlPendingOpen && _logged && Date.now() - _onlPendingAt < 600000) {
+					_onlPendingOpen = false;
+					openOnlineUsers();
+				}
+			});
+		} catch (e) { }
 
 		// ★ 版本号隐藏链接 — 点击打开更新日志，hover 零外观零 tooltip（与在线人数同款）
 		if ($ver) {

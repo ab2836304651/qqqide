@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 
 <!-- Copyright (C) 2025-2026 Sichuan Dream Technology Co., Ltd. All Rights Reserved. -->
-<!-- goods/kmd/kmd-ui.html — kmd 终端 UI（v1 行模式，分裂架构） -->
+<!-- goods/kmd/kmd-ui.html — kmd 终端 UI（v1 行模式，分裂架构；kmd:init 可带 fileName 预填 / runCmd 会话就绪即执行） -->
 <!-- 招牌能力：键入行 = 原生 input → 点击任意位置移动光标（零成本） -->
 <html lang="zh-CN">
 <head>
@@ -142,6 +142,8 @@ body{font-family:ui-monospace,Consolas,"Courier New",monospace;font-size:13px;co
   <button id="newline-btn" title="插入换行" data-i18n-title="goods.kmd.newline" data-no-cd>&#8629;</button>
 </div>
 <script src="../../core/i18n.js"></script>
+<script src="../../core/drag-text.js"></script>
+<script src="../../core/term-drop.js"></script>
 <script>
 (function () {
     'use strict';
@@ -178,6 +180,7 @@ body{font-family:ui-monospace,Consolas,"Courier New",monospace;font-size:13px;co
     var MAX_LINES = 5000; // DOM 行上限，超出删最老（防内存膨胀）
     var autoScroll = true;
     var running = false;
+    var pendingRunCmd = null; // 编辑器「运行」一次性自动执行（kmd:init 带 runCmd → 会话就绪即 exec 一次）
     var outBuf = ''; // 未完成行缓冲
     var curLine = null; // 流式行封行标记（null = 下一段无 \n 输出开新行）
     var gbPrompt = 0;   // gitbash：OSC 标题（\x1b]0;）出现 = 提示符块开始 → 丢弃直到 $ 行（2026-08-13 提示符三行噪音根治）
@@ -221,6 +224,7 @@ body{font-family:ui-monospace,Consolas,"Courier New",monospace;font-size:13px;co
             gbCwd = winToMsys(cwd); // 会话初始目录 → gitbash 路径抬头（OSC 首到后自动校正）
             nameInput.value = d.title || ''; // 命名键入框初始值 = 当前标签标题（用户可立即改名）
             setShellUI(shellType);
+            pendingRunCmd = d.runCmd ? String(d.runCmd) : null; // 编辑器「运行」：会话就绪即执行（start 内消费）
             start();
             // ★ 2026-08-25 roam 单文件选中 + x：文件名预填键入行（不带路径，任何类型都填）——用户补命令/解释器即回车
             if (d.fileName) {
@@ -324,6 +328,14 @@ body{font-family:ui-monospace,Consolas,"Courier New",monospace;font-size:13px;co
         bridge.kmd.spawn(sessionId, shellType, cwd).then(function (r) {
             if (r && r.ok) {
                 running = true;
+                // ★ 编辑器「运行」：会话就绪即执行一次（写历史 + exec；cmd 原生回显，posix 走 self 行回显）
+                if (pendingRunCmd) {
+                    var _rc = pendingRunCmd;
+                    pendingRunCmd = null;
+                    history.push(_rc);
+                    histIdx = history.length;
+                    exec(_rc);
+                }
             } else {
                 appendLine('err', _kk('goods.kmd.spawnFail', '[会话启动失败] {0}', (r && r.error) || 'unknown'));
             }
@@ -1159,6 +1171,17 @@ body{font-family:ui-monospace,Consolas,"Courier New",monospace;font-size:13px;co
         if (marksRaf) return;
         marksRaf = requestAnimationFrame(function () { marksRaf = null; renderMarks(); });
     });
+
+    // ── 拖入接收（2026-10-12）：拖入 = 粘贴（同 Ctrl+V 通道 insertToInput，绝不回车）──
+    //   文件/图片/文件夹 → 按当前 shell 方言引用成路径文本（cmd "…" / PS '…' / posix '…'）；
+    //   外拖文本 → 原样插入；机 = core/term-drop.js（唯一源，kmd/qmd 共用；引用规则见该文件头）
+    if (window.qqqTermDrop) {
+        window.qqqTermDrop.install(document, {
+            shell: function () { return shellType; },
+            insert: function (t) { insertToInput(t); },
+            onNoPath: function (n) { appendLine('dim', _kk('goods.kmd.dropNoPath', '── 拖入忽略 {0} 项（无本地路径）──', String(n))); }
+        });
+    }
 
     // 首次聚焦
     inputEl.focus();

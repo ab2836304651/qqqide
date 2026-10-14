@@ -9,6 +9,10 @@
 // 2026-07-20 v2: 覆盖 TEMP/TMP/LOCALAPPDATA 环境变量 → GPU/V8 缓存自然落入便携目录。
 //   不再禁用 GPU shader cache / CodeCache（改为重定向），零能力下降。
 //   启动时自动清理 Data/Temp 中超过 24h 的临时文件。
+// 2026-10-12 v3: TEMP/TMP 落点移出交换域——绿色包恒 {包根}/tmp（gh555.com 的兄弟
+//   目录，升级换装整树重命名永不触碰）；根因：TEMP 会被一切子进程继承，从 qqqide 里启动的
+//   浏览器/QQ/用户工具把临时文件写进 Data\Temp 并长期持句柄 → 交换改名 err=5 无限推迟。
+//   dev/mac/linux（无整树交换，或 Data 本在程序文件之外）保持 {Data}/Temp 不变。
 // ============================================================================
 
 import * as path from 'path';
@@ -131,10 +135,34 @@ function migrateMacLegacyData(): void {
     }
 }
 
+/** ★ 交换域安全临时根（2026-10-12）: 升级换装 = 整树重命名 {包根}/gh555.com——交换域内任何
+ *  被外部进程持有的句柄都会让改名失败（升级无限推迟）。TEMP/TMP 会被一切子进程继承（从
+ *  qqqide 里启动的浏览器/QQ/用户工具全是），临时目录若在 Data\Temp → 它们的临时文件 = 交换域
+ *  内长期句柄。故绿色包（win 且 {包根}/qqqide.exe 在位）恒用交换域之外 {包根}/tmp
+ *  （创建失败回退旧落点）；dev/mac/linux（无整树交换，或 Data 本在程序文件之外）保持不变。 */
+function getSwapSafeTempDir(baseData: string): string {
+    if (process.argv.includes('--smoke') && process.env.QQQIDE_SMOKE_DATA) {
+        return path.join(baseData, 'Temp');   // 冒烟重定向路径保持原样
+    }
+    if (process.platform === 'win32') {
+        const parent = path.dirname(getHostDir());
+        try {
+            if (fs.existsSync(path.join(parent, 'qqqide.exe'))) {
+                const cand = path.join(parent, 'tmp');
+                fs.mkdirSync(cand, { recursive: true });   // 不可写 → 异常回退旧落点
+                return cand;
+            }
+        } catch { /* fallthrough -> Data/Temp */ }
+    }
+    return path.join(baseData, 'Temp');
+}
+
 /** Apply portable redirects. Call this BEFORE app.whenReady().
  *  ★ 播放器宿主域（2026-10-02）：opts.sessionDir = 'player-host' → userData 独立子目录
- *  （独立 SingletonLock → 与 IDE 域互不夺锁；Cache/Temp/Logs 仍共享 Data 根）。 */
-export function applyPortablePaths(opts?: { sessionDir?: string }): { root: string; userData: string; cache: string; logs: string } {
+ *  （独立 SingletonLock → 与 IDE 域互不夺锁；Cache/Temp/Logs 仍共享 Data 根）。
+ *  ★ 受控浏览器域：opts.extraDisableFeatures 并入下方 disable-features 唯一清单
+ *  （该 switch 重复 append 仅末值生效——扩展项必须并入此处，禁第二处 append）。 */
+export function applyPortablePaths(opts?: { sessionDir?: string; extraDisableFeatures?: string }): { root: string; userData: string; cache: string; logs: string } {
     const root = getAppRoot();
     migrateMacLegacyData();
     migrateLegacyOsDirs();
@@ -142,7 +170,8 @@ export function applyPortablePaths(opts?: { sessionDir?: string }): { root: stri
     const userData = (opts && opts.sessionDir) ? path.join(baseData, opts.sessionDir) : baseData;
     // ★ 所有运行时目录收进 userData/，根目录保持干净（宿主域 Cache/Temp/Logs 仍挂共享 Data 根）
     const cache = path.join(baseData, 'Cache');
-    const temp = path.join(baseData, 'Temp');
+    const temp = getSwapSafeTempDir(baseData);           // ★ 交换域外（绿色包）/ 原样（其余）——见上
+    const legacyTemp = path.join(baseData, 'Temp');      // 历史落点：仅作残留清理
     const logs = path.join(baseData, 'Logs');
     const crashDumps = path.join(baseData, 'CrashDumps');
 
@@ -201,7 +230,8 @@ export function applyPortablePaths(opts?: { sessionDir?: string }): { root: stri
         'DefaultBrowser,MediaRouter,DialMediaRouteProvider,OptimizationHints,' +
         'OptimizationGuideModelDownloading,PreloadMediaEngagementData,SafeBrowsing,TranslateUI,' +
         'InterestFeedContentSuggestions,PrivacySandboxSettings4,SpellcheckService,PrintPreview,' +
-        'AutofillServerCommunication,PasswordManager,IdleDetection,WebOTP,WebPayments');
+        'AutofillServerCommunication,PasswordManager,IdleDetection,WebOTP,WebPayments' +
+        (opts && opts.extraDisableFeatures ? ',' + opts.extraDisableFeatures : ''));
 
     // explicitly disable features that may write registry / appdata
     app.commandLine.appendSwitch('no-default-browser-check');
@@ -226,6 +256,9 @@ export function applyPortablePaths(opts?: { sessionDir?: string }): { root: stri
 
     // ★ 后台清理超过 24h 的临时文件（不阻塞启动）
     setImmediate(() => cleanupStaleTemp(temp, 24 * 60 * 60 * 1000));
+    // ★ 历史落点清残（迁移后 Data/Temp 不再产生新文件；存量 >24h 顺手清，
+    //   被外部进程占用的留待其退出/下次启动再清）
+    if (temp !== legacyTemp) setImmediate(() => cleanupStaleTemp(legacyTemp, 24 * 60 * 60 * 1000));
     // ★ 历史残留整树清除（2026-08-14）: LOCALAPPDATA 劫持时代的缓存垃圾
     //   （Intel ShaderCache / shell 图标缓存），被 explorer 占用则下次启动再试。
     setImmediate(() => {

@@ -11,8 +11,8 @@
 //   window.linkifyLocalPaths(root)    渲染后把本地路径文本链接化（幂等）
 //   window.probeLocalPathLinks(root)  存在性探针（确认存在才显示为链接，不存在还原纯文本）
 //   window.qqqLpl.config              配置（唯一入口扩展点）：
-//     · allowPosix: false —— 默认禁纯正斜杠相对路径（AI 面板语义，见下方 2026-09-07 注释）；
-//       md 预览（文档语境）置 true：放行正斜杠相对路径，风险由存在性探针兜底（不存在即还原）
+//     · allowPosix: false —— 正斜杠相对路径策略（AI 面板语义，见下方 C2 注释）：默认仅放行
+//       「文件形」（末段含扩展名、扩展名含字母）；md 预览（文档语境）置 true：全放行——探针兜底
 //     · resolve(raw) -> string | [主候选, 备候选] —— 链接生成前改写 data-p（md 预览把相对路径
 //       解析为「相对文档目录」的绝对路径做主候选，原样相对做备候选交给主窗口逐根解析）
 //
@@ -40,15 +40,16 @@ function _CFG() {
 
 // ═══ 本地路径链接机（2026-09-06）：AI 最终回复里滴本地路径 → 可点击 → Roam 定位 ═══
 // 三类候选：
-//   C1 盘符绝对路径  E:\a\b 或 E:/a/b      —— 任意位置（含代码块内，JSON 双反斜杠转义天然兼容）
+//   C1 盘符绝对路径  E:\a\b 或 E:/a/b      —— 任意位置（含代码块内，JSON 双反斜杠转义天然兼容）；
+//                                              file:///E:/a/b 前缀整体成链（探针端自带剥前缀+解码）
 //   C2 反斜杠路径    do\专利\xxx            —— 正文任意位置；行内代码(<code>非<pre>)整个内容算一个
 //                                              token（反引号包裹即作者意图，含空格路径也能整链）；
 //                                              多行代码块(<pre>)内仅限行首（防 \s\w 正则噪音）。
-//   ★ 2026-09-07 收紧：C2 必须含 ≥1 反斜杠 —— 纯正斜杠形态（持久化/重启恢复/多、server-app/core/x.js、
-//     do/专利/x）在中文正文与代码引用里极常见，噪音闸只管 ASCII 漏掉 CJK 斜杠短语（实锤误链），
-//     一律不链；斜杠路径如需可点请用盘符绝对（C1）或反斜杠形态（C2）
-//     ★ 2026-09-20 唯一入口扩展：config.allowPosix=true（md 预览）放行正斜杠相对路径——
-//     文档语境正斜杠是大头，风险由存在性探针兜底（不存在即还原纯文本，零假链接）
+//   ★ 2026-09-07：C2 含 ≥1 反斜杠恒可链；纯正斜杠形态整体不收（噪音闸只管 ASCII、漏掉 CJK 斜杠
+//     短语致实锤误链）。现行细化：纯正斜杠「文件形」（末段含扩展名、扩展名含字母）放行——探针
+//     兜底零假链；CJK 短语与无扩展名目录形态仍不收（同批误链不回潮）；唯一入口扩展
+//     config.allowPosix=true（md 预览、文档语境）全放行正斜杠相对路径。
+//   ★ 行号后缀（x.js:120 / x.js:120-140）：只链路径主体，后缀留纯文本（C1/C2/行内代码同规）
 //   C3 树图叶子名    ├── xxx.zip            —— 仅代码块内盒线行：行首盒线后首个含 . 的词；
 //                                              点击时由主窗口按「上文最近锚点目录」拼接解析
 // 幂等：已有 <a>（含 markdown 链接/历史 ai_html）内部文本跳过，重复执行零影响。
@@ -67,15 +68,30 @@ function _lplTrimTail(p) {
   else if (s.length > 1 && s.charAt(s.length - 1) === '.' && !s.endsWith('..')) s = s.slice(0, -1); // 句号
   return s;
 }
+// 行号后缀拆分（file.js:120 / file.js:120-140）：返回 {path, suffix} | null —— 只链路径主体，后缀留纯文本
+function _lplSplitLineSuffix(tok) {
+  var m = /^(.*?):(\d{1,6})(?:-(\d{1,6}))?$/.exec(tok);
+  if (!m || !m[1]) return null;
+  return { path: m[1], suffix: tok.slice(m[1].length) };
+}
+// 正斜杠「文件形」判定：末段含扩展名且扩展名含字母（挡 1/10、v2/1.4 与 CJK 短语——皆无合法扩展名）
+function _lplPosixFileLike(tok) {
+  var core = String(tok || '').replace(/[\\/]+$/, '');
+  var i = core.lastIndexOf('/');
+  var seg = i >= 0 ? core.slice(i + 1) : core;
+  if (seg.length < 3) return false;
+  var m = /\.([A-Za-z0-9_+-]{1,12})$/.exec(seg);
+  return !!m && /[A-Za-z]/.test(m[1]);
+}
 // 相对路径合法性：不以斜杠开头、无冒号、≥2 段且每段非空（允许末尾一个分隔符=目录标记）
 function _lplValidRel(tok) {
   if (!tok || tok.length < 3 || tok.length > 320) return false;
   if (tok.charAt(0) === '\\' || tok.charAt(0) === '/') return false;
   if (tok.indexOf(':') !== -1) return false;
-  // ★ 2026-09-20 唯一入口扩展：默认纯正斜杠不链（见头部 2026-09-07 注释）；
-  //   config.allowPosix=true（md 预览）放行——探针兜底（不存在即还原，零假链接）
+  // ★ 正斜杠相对路径：AI 面板仅放行「文件形」（见头部 C2 注释）；md 预览全放行——探针兜底零假链
   if (tok.indexOf('\\') === -1) {
-    if (!(_CFG().allowPosix && tok.indexOf('/') !== -1)) return false;
+    if (tok.indexOf('/') === -1) return false;
+    if (!_CFG().allowPosix && !_lplPosixFileLike(tok)) return false;
   }
   if (_lplBad(tok)) return false;
   var core = tok.replace(/[\\/]+$/, '');
@@ -102,6 +118,7 @@ function _lplValidAbs(tok) {
   if (tok.length === 3) return true;                    // 盘根 E:\ / E:/
   return !_lplBad(tok);
 }
+function _lplValidAny(t) { return _lplValidAbs(t) || _lplValidRel(t); }
 // 文本扫描：返回 [{start,end,raw}]（不含 C3，C3 由盒线行补扫处理）
 // mode: 0=正文任意位置  1=pre 仅行首
 function _lplScanText(s, mode) {
@@ -116,11 +133,13 @@ function _lplScanText(s, mode) {
       var j = i + 3;
       while (j < n && !_lplIsTerm(s.charAt(j)) && !_lplIsSpace(s.charAt(j))) j++;
       var raw = _lplTrimTail(s.slice(i, j));
+      var spA = _lplSplitLineSuffix(raw);                 // 行号后缀：只链路径主体（后缀留纯文本）
+      if (spA && _lplValidAbs(spA.path)) raw = spA.path;
       if (_lplValidAbs(raw)) out.push({ start: i, end: i + raw.length, raw: raw });
       i = Math.max(j, i + 1);
       continue;
     }
-    // ── C2 反斜杠/正斜杠相对路径 ──
+    // ── C2 反斜杠/正斜杠相对路径（含 file:/// 前缀整体成链） ──
     if (_lplIsSpace(ch) || _lplIsTerm(ch) || ch === '\\' || ch === '/') { i++; continue; }
     if (mode === 1 && i > 0 && s.charAt(i - 1) !== '\n') {
       // pre 内仅行首（本行从行首到 i 只允许空白）
@@ -131,7 +150,11 @@ function _lplScanText(s, mode) {
     var k = i;
     while (k < n && !_lplIsTerm(s.charAt(k)) && !_lplIsSpace(s.charAt(k))) k++;
     var tok = _lplTrimTail(s.slice(i, k));
-    if (_lplValidRel(tok)) out.push({ start: i, end: i + tok.length, raw: tok });
+    var tpfx = '';
+    if (/^file:\/\/\//i.test(tok)) { tpfx = tok.slice(0, 8); tok = tok.slice(8); }   // file:/// 前缀整体成链
+    var spT = _lplSplitLineSuffix(tok);
+    if (spT && _lplValidAny(spT.path)) out.push({ start: i, end: i + tpfx.length + spT.path.length, raw: tpfx + spT.path });
+    else if (_lplValidAny(tok)) out.push({ start: i, end: i + tpfx.length + tok.length, raw: tpfx + tok });
     i = Math.max(k, i + 1);
   }
   return out;
@@ -151,23 +174,34 @@ function _lplScanPreTreeLine(line) {
   if (_lplBad(w)) return null;
   return { raw: w, at: m.index + m[0].indexOf(w) };
 }
-// 行内代码（非 pre）：整个内容即一个候选 token（反引号包裹=作者意图，允许内部空格）
+// 行内代码路径合法性（绝对盘符 / 相对；正斜杠=文件形 或 allowPosix 全放行）
+function _lplCodePathOk(t) {
+  if (!t || t.charAt(0) === '\\' || t.charAt(0) === '/') return false;
+  if (/^[A-Za-z]:[\\/]/.test(t)) return _lplValidAbs(t);
+  if (t.indexOf(':') !== -1) return false;
+  if (t.indexOf('\\') === -1) {
+    if (t.indexOf('/') === -1) return false;
+    if (!_CFG().allowPosix && !_lplPosixFileLike(t)) return false;   // 与正文 C2 同规：仅「文件形」
+  }
+  var core = t.replace(/[\\/]+$/, '');
+  var parts = core.split(/[\\/]/);
+  if (parts.length < 2) return false;
+  for (var i = 0; i < parts.length; i++) if (!parts[i]) return false;
+  return true;
+}
+// 行内代码（非 pre）：整个内容即一个候选 token（反引号包裹=作者意图，允许内部空格）；
+// 返回 {raw, tail} | null —— raw=链接主体（含 file:/// 前缀）；tail=行号后缀（留在代码内显纯文本）
 function _lplCodeToken(codeEl) {
   if (!codeEl || codeEl.closest('pre')) return null;
   var t = (codeEl.textContent || '').trim();
   if (!t || t.length < 3 || t.length > 320) return null;
   if (/[\r\n\t]/.test(t)) return null;
-  if (/^[A-Za-z]:[\\/]/.test(t)) return _lplValidAbs(t) ? t : null;
-  // ★ 2026-09-20：纯正斜杠默认不链（与正文 C2 同规：反引号包裹也须反斜杠形态）；
-  //   config.allowPosix=true（md 预览）放行——探针兜底
-  if (t.indexOf('\\') === -1 && !(_CFG().allowPosix && t.indexOf('/') !== -1)) return null;
-  if (t.charAt(0) === '\\' || t.charAt(0) === '/') return null;
-  if (t.indexOf(':') !== -1) return null;
-  var core = t.replace(/[\\/]+$/, '');
-  var parts = core.split(/[\\/]/);
-  if (parts.length < 2) return null;
-  for (var i = 0; i < parts.length; i++) if (!parts[i]) return null;
-  return t;
+  var pfx = '';
+  if (/^file:\/\/\//i.test(t)) { pfx = t.slice(0, 8); t = t.slice(8); }
+  var sp = _lplSplitLineSuffix(t);
+  if (sp && _lplCodePathOk(sp.path)) return { raw: pfx + sp.path, tail: sp.suffix };
+  if (_lplCodePathOk(t)) return { raw: pfx + t, tail: '' };
+  return null;
 }
 // data-p 写入统一入口：config.resolve 改写（string 或 [主候选, 备候选]）
 function _lplSetP(a, raw) {
@@ -277,12 +311,13 @@ function linkifyLocalPaths(root) {
           pe.textContent = '';
           var ca = root.ownerDocument.createElement('a');
           ca.className = 'qqq-path-link';
-          var pvc = _lplSetP(ca, whole);
+          var pvc = _lplSetP(ca, whole.raw);
           if (ctxCode) ca.setAttribute('data-c', ctxCode);
           ca.title = _t('ai.roamOpen', '在 Roam 中打开');
           ca.setAttribute('data-i18n-title', 'ai.roamOpen');   // ★ 语言切换自动保鲜
-          ca.textContent = whole;
+          ca.textContent = whole.raw;
           pe.appendChild(ca);
+          if (whole.tail) pe.appendChild(root.ownerDocument.createTextNode(whole.tail));   // 行号后缀留纯文本
           lastByBlock.set(blockCode, pvc);
         }
         continue;
@@ -404,7 +439,7 @@ function _lplFlush() {
   }
 }
 // 探针回执：主窗口逐根裁决结果按 key 落缓存并释放 pending（响应忽略 reqId，key 全局唯一）
-window.addEventListener('message', function (e) {
+if (typeof window !== 'undefined') window.addEventListener('message', function (e) {
   try {
     if (!e.data || e.data.type !== 'qqq-lpl-probe-result') return;
     var results = e.data.results;
@@ -460,11 +495,11 @@ function probeLocalPathLinks(root) {
     }
   } catch (_) { }
 }
-window.probeLocalPathLinks = probeLocalPathLinks;
+if (typeof window !== 'undefined') window.probeLocalPathLinks = probeLocalPathLinks;
 
 // ═══ 点击委托：本地路径链接 → 主窗口 Roam 定位（capture 阶段，任何子树/热重载后新 DOM 一律命中）═══
 // 门控：仅已确认存在（.qqq-path-ok）立即跳；未确认（探针在途）先等结果——存在才跳，不存在零动作。
-document.addEventListener('click', function (e) {
+if (typeof document !== 'undefined') document.addEventListener('click', function (e) {
   var _t2 = e.target;
   if (!_t2 || !_t2.closest) return;
   var _pl = _t2.closest('.qqq-path-link');
@@ -501,11 +536,24 @@ document.addEventListener('click', function (e) {
 }, true);
 
 // 出口：AI 面板调用点（card-pool/panel-pipeline/panel-render）全部走 window.* 同名入口
-window.linkifyLocalPaths = linkifyLocalPaths;
-window.qqqLpl = {
-    linkify: linkifyLocalPaths,
-    probe: probeLocalPathLinks,
-    config: { allowPosix: false, resolve: null }
-};
+if (typeof window !== 'undefined') {
+    window.linkifyLocalPaths = linkifyLocalPaths;
+    window.qqqLpl = {
+        linkify: linkifyLocalPaths,
+        probe: probeLocalPathLinks,
+        config: { allowPosix: false, resolve: null }
+    };
+}
+// ═══ Node 单测守卫（ci/tests/lpl-scan.test.js；浏览器零影响——上方 window 出口原样）═══
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        scanText: _lplScanText,
+        validRel: _lplValidRel,
+        validAbs: _lplValidAbs,
+        codeToken: _lplCodeToken,
+        posixFileLike: _lplPosixFileLike,
+        splitLineSuffix: _lplSplitLineSuffix
+    };
+}
 
 })();

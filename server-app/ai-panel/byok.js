@@ -12,7 +12,8 @@
 //
 // 职责：
 //   1. 配置读写（qgs.simple('qqq.byok')，键 'cfg'）——跨面板/窗口共享，变更即时刷新
-//   2. 请求构造（平台 body → OpenAI 兼容 body：剥离平台内部字段 + max_tokens 帽对齐）
+//   2. 请求构造（平台 body → OpenAI 兼容 body：剥离平台内部字段 + 输出上限策略——默认不发送
+//      max_tokens（各服务商上限不一，留空由服务商决定最稳）；仅用户显式配置才发送；400 范围自愈一次）
 //   3. 直连 fetch（渲染层直连；目标端点支持浏览器跨域时天然可用）
 //   4. 设置 UI（tier 组 "Z" 按钮 → 弹窗：启用/地址/Key/模型/思考参数/网络通道/测试连接）
 //      ★ 思考参数与平台档位解耦（2026-09-16 用户定）：勾选后由用户自选档位（low/medium/high/max）
@@ -63,7 +64,7 @@
     var _chgSub = null;      // onChange 订阅
 
     function _emptyCfg() {
-        return { enabled: false, baseUrl: '', apiKey: '', apiKeyEnc: '', model: '', sendThinking: false, thinkLevel: 'high', thinkJson: '', route: 'direct', testedAt: 0, _locked: '' };
+        return { enabled: false, baseUrl: '', apiKey: '', apiKeyEnc: '', model: '', sendThinking: false, thinkLevel: 'high', thinkJson: '', maxTokens: 0, route: 'direct', testedAt: 0, _locked: '' };
     }
 
     function _qgsSimple() {
@@ -108,6 +109,7 @@
             if (typeof raw.sendThinking === 'boolean') c.sendThinking = raw.sendThinking;
             if (typeof raw.thinkLevel === 'string' && /^(low|medium|high|max)$/.test(raw.thinkLevel)) c.thinkLevel = raw.thinkLevel;
             if (typeof raw.thinkJson === 'string') c.thinkJson = raw.thinkJson.trim();
+            if (typeof raw.maxTokens === 'number' && isFinite(raw.maxTokens) && raw.maxTokens > 0) c.maxTokens = Math.floor(raw.maxTokens);
             if (raw.route === 'relay' || raw.route === 'direct') c.route = raw.route;
             if (typeof raw.testedAt === 'number') c.testedAt = raw.testedAt;
         }
@@ -230,6 +232,7 @@
             sendThinking: !!next.sendThinking,
             thinkLevel: /^(low|medium|high|max)$/.test(String(next.thinkLevel || '')) ? next.thinkLevel : 'high',
             thinkJson: String(next.thinkJson || '').trim(),
+            maxTokens: (typeof next.maxTokens === 'number' && isFinite(next.maxTokens) && next.maxTokens > 0) ? Math.floor(next.maxTokens) : 0,
             route: (next.route === 'relay') ? 'relay' : 'direct',
             testedAt: (typeof next.testedAt === 'number' && next.testedAt > 0) ? next.testedAt : 0
         };
@@ -257,6 +260,7 @@
         if (_isLocalBase(next.baseUrl)) next.route = 'direct';   // 本地模型：平台代理无意义（服务端到不了你的本机），一律直连
         next.apiKey = String(next.apiKey || '').trim();
         next.model = String(next.model || '').trim();
+        next.maxTokens = Math.max(0, Math.floor(Number(next.maxTokens) || 0));   // 归一：0/非法 = 不发送（服务商默认）
         var stored = await _buildStored(next);
         _cfg = _normalize(stored);
         if (next.apiKey) _cfg.apiKey = next.apiKey;   // 本会话内存保留明文（立即可用）
@@ -411,9 +415,13 @@
             model: cfg.model,
             messages: msgs,
             stream: true,
-            stream_options: { include_usage: true },
-            max_tokens: (body && body.max_tokens) || ((typeof ContentGateway !== 'undefined' && ContentGateway.MAX_RESPONSE_TOKENS) ? ContentGateway.MAX_RESPONSE_TOKENS : 393216)
+            stream_options: { include_usage: true }
         };
+        // ★ 输出上限（2026-10-12 定案）：默认【不发送】max_tokens —— 各服务商上限互不相同，严格校验者
+        //   见超限值直接 400；留空 = 由服务商决定，最稳。仅用户显式配置（cfg.maxTokens > 0）才发送。
+        //   旧行为曾继承平台量级默认值 → 上限更小的服务商每次对话必挂（400 Range of max_tokens）。
+        var _mt = parseInt(cfg && cfg.maxTokens, 10) || 0;
+        if (_mt > 0) out.max_tokens = _mt;
         if (body && body.tools && body.tools.length) {
             out.tools = body.tools;
             if (body.tool_choice) out.tool_choice = body.tool_choice;
@@ -578,6 +586,27 @@
     }
 
     // ════════════════════════════════════════════════════════════
+    // max_tokens 范围自愈（2026-10-12）：上游 400 报文带明确范围（如 Range of max_tokens should be
+    //   [1, 131072]）→ 把请求体 max_tokens 钳到上限、原样重发一次——用户配置值/服务商默认与上限
+    //   不符时楼层不再必死。只嗅探 !ok 响应（流式成功响应绝不触碰）；只重试一次；仍失败则原错误
+    //   照常上屏（诚实）。直连/平台代理两条通道各自接入（平台透传上游原报文）。
+    // ════════════════════════════════════════════════════════════
+    var _MT_RANGE_RE = /max_tokens[\s\S]{0,80}?\[\s*(\d+)\s*,\s*(\d+)\s*\]/i;
+    function _sniffMaxTokensRange(text) {
+        try {
+            if (!text || text.indexOf('max_tokens') < 0) return null;
+            var m = String(text).match(_MT_RANGE_RE);
+            if (!m) return null;
+            var lo = parseInt(m[1], 10), hi = parseInt(m[2], 10);
+            if (!(hi >= 1) || hi < lo) return null;
+            return { lo: lo, hi: hi };
+        } catch (_) { return null; }
+    }
+    async function _readBodyText(resp) {
+        try { return await resp.clone().text(); } catch (_) { return ''; }
+    }
+
+    // ════════════════════════════════════════════════════════════
     // 统一 fetch — ai-gateway.js chatFetch 唯一消费点
     // 返回 Promise<Response>；未启用/未配置 → null（调用方回落平台通道）
     // route='direct'（默认）→ 直连用户端点；route='relay' → 平台代理转发
@@ -623,13 +652,24 @@
 
         // ── 平台代理通道（网络通道=平台代理；直连为默认推荐；本地模型强制直连）──
         if (_isRelay) {
-            try {
-                resp = await _relayPost(url, { authorization: 'Bearer ' + cfg.apiKey }, JSON.stringify(outBody),
+            var _doRelay = function () {
+                return _relayPost(url, { authorization: 'Bearer ' + cfg.apiKey }, JSON.stringify(outBody),
                     (opts && opts.signal) || null, (body && body.floor_id) || '');
+            };
+            try {
+                resp = await _doRelay();
             } catch (err) {
                 _vigFail(((opts && opts.signal && opts.signal.aborted) || (err && err.name === 'AbortError')) ? 'ft' : 'fn');
                 if (err && err._byok) throw err;
                 throw _relayErr(_t('ai.byok.relayUnreachable', '平台代理连接失败'), (err && err.message) || String(err));
+            }
+            // ★ 400 范围自愈：钳上限原样重发一次（用户 Stop 中断时不重试）
+            if (!resp.ok && !(opts && opts.signal && opts.signal.aborted)) {
+                var _rngR = _sniffMaxTokensRange(await _readBodyText(resp));
+                if (_rngR) {
+                    outBody.max_tokens = _rngR.hi;
+                    try { resp = await _doRelay(); } catch (_) { }
+                }
             }
             if (!resp.ok) resp = await _relayErrorNormalize(resp);
             _vigDone(resp);
@@ -638,21 +678,32 @@
         }
 
         // ── 直连通道（默认）──
-        try {
-            var dHdr = { 'Content-Type': 'application/json' };
-            if (cfg.apiKey) dHdr['Authorization'] = 'Bearer ' + cfg.apiKey;  // 本地模型可无 Key（跳过授权头）
-            resp = await fetch(url, {
+        var dHdr = { 'Content-Type': 'application/json' };
+        if (cfg.apiKey) dHdr['Authorization'] = 'Bearer ' + cfg.apiKey;  // 本地模型可无 Key（跳过授权头）
+        var _doDirect = function () {
+            return fetch(url, {
                 method: 'POST',
                 headers: dHdr,
                 body: JSON.stringify(outBody),
                 signal: (opts && opts.signal) || null
             });
+        };
+        try {
+            resp = await _doDirect();
         } catch (err) {
             _vigFail(((opts && opts.signal && opts.signal.aborted) || (err && err.name === 'AbortError')) ? 'ft' : 'fn');
             var msg = (err && err.message) || String(err);
             var e2 = new Error('[' + _t('ai.byok.tag', '自带密钥') + '] ' + _t('ai.byok.errReach', '无法连接你配置的 AI 端点') + ': ' + msg);
             e2._byok = true;
             throw e2;
+        }
+        // ★ 400 范围自愈：报文含 max_tokens 范围（如 [1, 131072]）→ 钳到上限原样重发一次——仍失败则原错误照常上屏（诚实）
+        if (!resp.ok && !(opts && opts.signal && opts.signal.aborted)) {
+            var _rng = _sniffMaxTokensRange(await _readBodyText(resp));
+            if (_rng) {
+                outBody.max_tokens = _rng.hi;
+                try { resp = await _doDirect(); } catch (_) { }
+            }
         }
         if (!resp.ok) resp = await _normalizeError(resp);
         _vigDone(resp);
@@ -741,7 +792,7 @@
         s.textContent = [
             '#byok-btn.byok-on{background:var(--green);color:#fff;font-weight:800}',
             '#byok-overlay{display:none;position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.35)}',
-            '#byok-panel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:520px;max-width:92vw;max-height:86vh;overflow:auto;',
+            '#byok-panel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:520px;max-width:92vw;max-height:86vh;overflow-y:auto;overflow-x:hidden;',
             'background:var(--card-bg);color:var(--text-primary);border:1px solid var(--border-color);border-radius:6px;padding:16px 18px 14px;',
             'font-size:13px;font-family:inherit;box-shadow:0 6px 30px rgba(0,0,0,0.35);text-align:left}',
             '#byok-panel .bk-row{margin:10px 0 0}',
@@ -1027,6 +1078,8 @@
             '<button class="bk-btn bk-mini" id="byok-probe">' + _t('ai.byok.probeLocal', '检测本机模型') + '</button>' +
             '</div>' +
             '<div class="bk-model-note" id="byok-model-note"></div></div>' +
+            '<div class="bk-row"><label class="bk-label">' + _t('ai.byok.maxTokens', '最大输出 tokens（可选）') + '</label>' +
+            '<input type="text" id="byok-maxtokens" inputmode="numeric" placeholder="' + _t('ai.byok.maxTokensPh', '留空 = 使用服务商默认（推荐）') + '" spellcheck="false"></div>' +
             '<div class="bk-row"><label class="bk-label">' + _t('ai.byok.route', '网络通道') + '</label>' +
             '<div class="bk-routes">' +
             '<label class="bk-radio"><input type="radio" name="byok-route" value="direct"><span>' + _t('ai.byok.routeDirect', '直连（推荐）') + '</span></label>' +
@@ -1102,8 +1155,13 @@
         $('byok-fetch').onclick = function () { _pullModels(false); };
         $('byok-probe').onclick = function () { _probeLocalModels(); };
         // 输入即存（change = 失焦/回车触发；防抖在输入路径之外，频率极低）
-        ['byok-baseurl', 'byok-key', 'byok-model'].forEach(function (id) {
+        ['byok-baseurl', 'byok-key', 'byok-model', 'byok-maxtokens'].forEach(function (id) {
             $(id).addEventListener('change', function () { _saveForm().then(function () { _refreshRouteNote(); }); });
+        });
+        // 最大输出 tokens：数字过滤（粘贴混入文本自动净化）
+        $('byok-maxtokens').addEventListener('input', function () {
+            var v = String(this.value || '').replace(/[^\d]/g, '');
+            if (v !== this.value) this.value = v;
         });
         $('byok-think').addEventListener('change', function () { _syncThinkVis(); _saveForm(); });
         $('byok-think-json').addEventListener('change', function () { _saveForm(); });   // 思考档保存走自绘下拉 onPick
@@ -1148,6 +1206,13 @@
             : _t('ai.byok.directNote', '直连：要求你的网络能访问该服务商（不经我们服务器）。本地模型（Ollama/LM Studio 等）填 http://127.0.0.1:端口/v1，Key 可留空。');
     }
 
+    // 最大输出 tokens 字段读取：>0 的数字才有效（0/空/非法 = 不发送，由服务商决定）
+    function _readMaxTokensField(c) {
+        var el = document.getElementById('byok-maxtokens');
+        var raw = el ? el.value : String((c && c.maxTokens) || '');
+        var n = parseInt(String(raw || '').trim(), 10);
+        return (isFinite(n) && n > 0) ? Math.floor(n) : 0;
+    }
     function _readForm() {
         var $ = function (id) { return document.getElementById(id); };
         var c = get();
@@ -1160,6 +1225,7 @@
             sendThinking: $('byok-think') ? $('byok-think').checked : c.sendThinking,
             thinkLevel: $('byok-think-level') ? $('byok-think-level').value : (c.thinkLevel || 'high'),
             thinkJson: ($('byok-think-json') ? $('byok-think-json').value : (c.thinkJson || '')).trim(),
+            maxTokens: _readMaxTokensField(c),
             route: rEl ? rEl.value : (c.route || 'direct'),
             testedAt: c.testedAt
         };
@@ -1172,7 +1238,7 @@
         var c = _readForm();
         await save({
             baseUrl: c.baseUrl, apiKey: c.apiKey, model: c.model, sendThinking: c.sendThinking,
-            thinkLevel: c.thinkLevel, thinkJson: c.thinkJson, route: c.route
+            thinkLevel: c.thinkLevel, thinkJson: c.thinkJson, maxTokens: c.maxTokens, route: c.route
         });
     }
 
@@ -1188,6 +1254,7 @@
         $('byok-think-level').value = /^(low|medium|high|max)$/.test(c.thinkLevel || '') ? c.thinkLevel : 'high';
         if (_thinkSel) _thinkSel.set($('byok-think-level').value);
         $('byok-think-json').value = c.thinkJson || '';
+        $('byok-maxtokens').value = c.maxTokens > 0 ? String(c.maxTokens) : '';
         _syncThinkVis();
         var rSel = document.querySelector('input[name="byok-route"][value="' + (c.route === 'relay' ? 'relay' : 'direct') + '"]');
         if (rSel) rSel.checked = true;
@@ -1236,6 +1303,7 @@
         $('byok-think-level').value = /^(low|medium|high|max)$/.test(form.thinkLevel || '') ? form.thinkLevel : 'high';
         if (_thinkSel) _thinkSel.set($('byok-think-level').value);
         $('byok-think-json').value = form.thinkJson || '';
+        $('byok-maxtokens').value = form.maxTokens > 0 ? String(form.maxTokens) : '';
         _syncThinkVis();
         var rr = document.querySelector('input[name="byok-route"][value="' + (form.route === 'relay' ? 'relay' : 'direct') + '"]');
         if (rr) rr.checked = true;

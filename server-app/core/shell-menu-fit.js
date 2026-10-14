@@ -361,8 +361,8 @@
   function _helpUnderPointer() {
     try {
       if (_helpRootBound && _helpRootBound.isConnected && _helpRootBound.matches(':hover')) return true;
-      var s = document.querySelector('.qqq-help-sub');
-      if (s && s.matches(':hover')) return true;
+      var subs = document.querySelectorAll('.qqq-help-sub');   // 多级子菜单：逐级全查（help 菜单无限级）
+      for (var i = 0; i < subs.length; i++) { if (subs[i].matches(':hover')) return true; }
     } catch (e) { }
     return false;
   }
@@ -384,8 +384,8 @@
       if (_helpRootBound && _helpRootBound.contains(t)) return true;
       var h = document.querySelector('.qqq-help-menu');
       if (h && h.contains(t)) return true;
-      var s = document.querySelector('.qqq-help-sub');
-      if (s && s.contains(t)) return true;
+      var subs = document.querySelectorAll('.qqq-help-sub');   // 多级子菜单：逐级全查（help 菜单无限级）
+      for (var i = 0; i < subs.length; i++) { if (subs[i].contains(t)) return true; }
     } catch (e) { }
     return false;
   }

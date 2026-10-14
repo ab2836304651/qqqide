@@ -1397,7 +1397,21 @@
         var globalPath = appRootClean + '/Data/global.txt';
         var globalExists = await bridge.fs.exists(globalPath);
         if (!globalExists) {
-          await bridge.fs.write(globalPath, '# qqq AI Global Rules\n# Write rules here that apply to ALL projects.\n# They will be injected at the start of every new conversation.\n# Rules are only sent once (first turn) \u2014 AI remembers them from conversation history.\n# rule"..." works here too \u2014 rule"D:\\path\\to\\doc.md" auto-loads that file (files only, no folders).\n# Want AI to know a folder? Just write its path in plain text \u2014 AI will explore it on demand.\n');
+          // ★ 本机能力提示（活跃规则行 —— 每段新对话都会注入）：装包内置「受控浏览器工具链」
+          var _wtLine = '';
+          try {
+            var _wtCands = [
+              appRootClean + '/resources/app/server-app/ai-panel/webtools/README.md',
+              appRootClean + '/server-app/ai-panel/webtools/README.md'
+            ];
+            for (var _wi = 0; _wi < _wtCands.length; _wi++) {
+              if (await bridge.fs.exists(_wtCands[_wi])) {
+                _wtLine = '网页自动化（操作网站 / 填表 / 批量任务 / 登记申请等）：先读 ' + _wtCands[_wi] + '，工具链在其同目录 kit/ 内。\n';
+                break;
+              }
+            }
+          } catch (_) { }
+          await bridge.fs.write(globalPath, _wtLine + '# qqq AI Global Rules\n# Write rules here that apply to ALL projects.\n# They will be injected at the start of every new conversation.\n# Rules are only sent once (first turn) \u2014 AI remembers them from conversation history.\n# rule"..." works here too \u2014 rule"D:\\path\\to\\doc.md" auto-loads that file (files only, no folders).\n# Want AI to know a folder? Just write its path in plain text \u2014 AI will explore it on demand.\n');
         }
         document.dispatchEvent(new CustomEvent('qqq-file-open', { detail: { path: globalPath } }));
         var projRoot = window._workspaceRoot;

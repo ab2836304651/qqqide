@@ -2158,6 +2158,7 @@
       rmBtn.setAttribute('data-i18n-title', 'shell.viewport.removeProject');   // ★ 语言切换自动保鲜
       rmBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
+        closeDropdown();               // ★ 弹确认框前先收掉悬停下拉（模态期间不留悬空列表）
         const ok = await confirmRemove(proj);
         if (ok) {
           removeProject(idx);
@@ -2179,10 +2180,9 @@
     block.appendChild(rmBtn);
 
     // hover → 150ms 防抖后展开下拉（防止光标掠过误触 + 限制 readdir 频率）
-    // ★ 展开职责唯一归属 hover（2026-10-04 用户定案：click 改 Roam 直达，不再弹下拉）；仅窗口有焦点时响应
+    // ★ 展开唯一手势，窗口有无焦点均可（无焦点悬停照常展开——未激活窗口里可直接看目录树）
     var _blockHoverTimer = null;
     block.addEventListener('mouseenter', () => {
-      if (!document.hasFocus()) return;
       if (_blockHoverTimer) return; // 已在计时中
       _blockHoverTimer = setTimeout(() => {
         _blockHoverTimer = null;
@@ -2192,16 +2192,17 @@
     block.addEventListener('mouseleave', () => {
       if (_blockHoverTimer) { clearTimeout(_blockHoverTimer); _blockHoverTimer = null; }
     });
-    // ★ 光标左键点击 → 在 Roam 中直接进入该项目文件夹（2026-10-04 用户定案：hover=展开下拉、click=Roam 直达）
+    // ★ 光标左键点击 → ① 先在 Roam 中直达该项目文件夹，② 再收起本块下拉——开合全归 hover，点击不再管开合
     //   定位唯一入口 = shell-overlay __qqq_roamRevealPath（目录 → roam.navTo；自动确保 Roam 标签存在并激活；
-    //   路径缺失 → 爬升最近祖先 + qoast）。点击先收掉 hover 可能已展开的下拉；窗口有无焦点均可。
+    //   路径缺失 → 爬升最近祖先 + qoast）。窗口有无焦点均可（点击本身即激活窗口）。
+    //   定位机器缺失 → 回退展开目录树（绝不死点击）。
     block.addEventListener('click', () => {
       if (_blockHoverTimer) { clearTimeout(_blockHoverTimer); _blockHoverTimer = null; }
-      closeDropdown();
       if (typeof window.__qqq_roamRevealPath === 'function') {
         try { window.__qqq_roamRevealPath(proj.path); } catch (_) { }
+        closeDropdown();
       } else {
-        showDropdown(block, proj);   // 定位机器缺失兜底（理论不可达）——至少给出目录树，绝不死点击
+        showDropdown(block, proj);   // 定位机器缺失兜底
       }
     });
     // 右键 → 打开新搜索标签（多实例）
@@ -2239,10 +2240,18 @@
       }
     });
 
-    // hover → 即时展示最近 20 个主文件夹下拉（仅窗口有焦点时）
+    // hover → 150ms 防抖后展开最近 20 个主文件夹下拉（与豆腐块同式：防光标掠过误触 + 限频读盘）
+    // ★ 窗口有无焦点均可（与豆腐块对齐——未激活窗口里直接悬停即可看列表）
+    var _addHoverTimer = null;
     block.addEventListener('mouseenter', () => {
-      if (!document.hasFocus()) return;
-      _showRecentDropdown(block);
+      if (_addHoverTimer) return;
+      _addHoverTimer = setTimeout(() => {
+        _addHoverTimer = null;
+        _showRecentDropdown(block);
+      }, 150);
+    });
+    block.addEventListener('mouseleave', () => {
+      if (_addHoverTimer) { clearTimeout(_addHoverTimer); _addHoverTimer = null; }
     });
 
 
@@ -2384,21 +2393,87 @@
     _setAiIframesPointerEvents('none');
   }
 
-  async function confirmRemove(proj) {
-    try {
-      const r = await bridge.dialog.message({
-        type: 'question',
+  // ── 内置确认弹框（first-run 同款风格；跨系统外观一致——禁原生系统弹窗）──
+  //   语义：确认=true / 取消|Esc=false / 遮罩点击不关闭（破坏性操作防误触）；
+  //   语言切换实时刷新；防重入（已有弹窗 → false）。
+  var _aivConfirmOv = null;
+  function _askConfirm(getTexts, detailText) {
+    return new Promise(function (resolve) {
+      if (_aivConfirmOv) { resolve(false); return; }
+      var ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);' +
+        'z-index:1000001;display:flex;align-items:center;justify-content:center;';
+      var panel = document.createElement('div');
+      panel.style.cssText = 'width:500px;max-width:92vw;box-sizing:border-box;' +
+        'background:var(--background-color);color:var(--text-primary);' +
+        'border:1px solid var(--border-strong);border-radius:10px;' +
+        'box-shadow:0 12px 48px rgba(0,0,0,0.5);padding:26px 28px 20px;' +
+        'font-size:14px;line-height:1.7;';
+
+      var h = document.createElement('div');
+      h.style.cssText = 'font-size:15px;font-weight:600;margin:0 0 12px;';
+      var msg = document.createElement('div');
+      msg.style.cssText = 'margin:0;white-space:pre-line;';
+      var detail = document.createElement('div');
+      detail.style.cssText = 'margin:8px 0 0;font-size:12px;color:var(--text-muted);word-break:break-all;';
+      detail.textContent = detailText || '';
+      detail.style.display = detailText ? '' : 'none';
+
+      var btnOk = document.createElement('button');
+      btnOk.type = 'button';
+      btnOk.style.cssText = 'padding:7px 20px;border:1px solid var(--border-strong);border-radius:6px;' +
+        'background:transparent;color:var(--text-secondary);font-size:13px;';
+      var btnCancel = document.createElement('button');
+      btnCancel.type = 'button';
+      btnCancel.style.cssText = btnOk.style.cssText;
+
+      function _fill() {   // i18n 填充（语言切换时重刷——开着弹窗切语言不锁旧文案）
+        var t = {};
+        try { t = getTexts() || {}; } catch (e) { t = {}; }
+        h.textContent = t.title || '';
+        msg.textContent = t.msg || '';
+        btnOk.textContent = t.ok || window._i('common.confirm', '确定');
+        btnCancel.textContent = t.cancel || window._i('common.cancel', '取消');
+      }
+      _fill();
+
+      function _close(result) {
+        document.removeEventListener('keydown', _onKey, true);
+        window.removeEventListener('qqq-lang-change', _fill);
+        if (_aivConfirmOv && _aivConfirmOv.parentNode) { try { _aivConfirmOv.parentNode.removeChild(_aivConfirmOv); } catch (e) { /* ignore */ } }
+        _aivConfirmOv = null;
+        resolve(result);
+      }
+      var _onKey = function (e) { if (e && e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); _close(false); } };
+      btnOk.addEventListener('click', function (e) { e.stopPropagation(); _close(true); });
+      btnCancel.addEventListener('click', function (e) { e.stopPropagation(); _close(false); });
+      document.addEventListener('keydown', _onKey, true);
+      window.addEventListener('qqq-lang-change', _fill);
+
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;justify-content:flex-end;gap:10px;margin-top:22px;';
+      row.appendChild(btnOk);      // 布局与 first-run 一致：主操作在左
+      row.appendChild(btnCancel);
+      panel.appendChild(h);
+      panel.appendChild(msg);
+      panel.appendChild(detail);
+      panel.appendChild(row);
+      ov.appendChild(panel);
+      document.body.appendChild(ov);
+      _aivConfirmOv = ov;
+    });
+  }
+
+  // ★ 移除项目确认 = 内置弹框（first-run 同款风格；原生系统弹窗已废——各系统外观一致）
+  function confirmRemove(proj) {
+    return _askConfirm(function () {
+      return {
         title: window._i('shell.viewport.removeTitle', '移除项目'),
-        message: window._i('shell.viewport.removeConfirm', '确定从 AI 视口移除「{n}」？').split('{n}').join(proj.name),
-        detail: proj.path,
-        buttons: [window._i('shell.viewport.removeBtn', '移除'), window._i('common.cancel', '取消')],
-        defaultId: 1,
-        cancelId: 1,
-      });
-      return r && r.response === 0;
-    } catch (_) {
-      return confirm(window._i('shell.viewport.removeAsk', '移除「{n}」？').split('{n}').join(proj.name));
-    }
+        msg: window._i('shell.viewport.removeConfirm', '确定从 AI 视口移除「{n}」？').split('{n}').join(proj.name),
+        ok: window._i('shell.viewport.removeBtn', '移除'),
+        cancel: window._i('common.cancel', '取消'),
+      };
+    }, proj.path);
   }
 
   // ---- notify: CustomEvent (same window) + postMessage (AI iframe) ----
@@ -2558,9 +2633,13 @@
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && activeDropdown) _dismissDropdown();
     });
-    // 窗口失焦轮询兜底（100ms 间隔）
+    // 窗口失焦轮询兜底（100ms 间隔）：只认「焦点 → 失焦」落差收口（关掉失焦前已打开的列表）；
+    // 无焦点 hover 打开的列表保留可见（展开手势与焦点无关——未激活窗口里列表恒可看）
+    var _ddFocusLast = document.hasFocus();
     setInterval(function () {
-      if (activeDropdown && !document.hasFocus()) _dismissDropdown();
+      var f = document.hasFocus();
+      if (activeDropdown && _ddFocusLast && !f) _dismissDropdown();
+      _ddFocusLast = f;
     }, 100);
 
   }

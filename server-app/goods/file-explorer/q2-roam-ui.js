@@ -128,8 +128,9 @@ async function loadDrives() {
 	deskBtn.className = 'nav-item';
 	deskBtn.id = 'drive-DESKTOP-btn';
 	deskBtn.textContent = 'Desktop';
-	function _navHomeDesktop() {
+	function _navHomeDesktop(_epoch) {
 		rpc('boot.getInfo').then(function(info) {
+			if (_epoch !== _navEpoch) return;   // ★ 解析期间用户已导航 → 认新不认旧
 			var home = (info && info.homedir) || (_RUI_POSIX ? '/home/Default' : 'C:\\Users\\Default');
 			navigateTo(_RUI_POSIX ? (home + '/Desktop') : (home + '\\Desktop'));
 		}).catch(function() {});
@@ -137,16 +138,18 @@ async function loadDrives() {
 	deskBtn.addEventListener('click', function() {
 		// ★ POSIX：优先用 kp_bridge 解析出的真实桌面路径（XDG user-dirs，Linux 本地化名如 ~/桌面）；
 		//   缓存未就绪 → 现场解析一次；仍无 → 回退 homedir + '/Desktop'（mac 惯例）
+		var _epoch = _navEpoch;   // ★ 本次手势意图；解析期间用户若已导航 → 整体放弃
 		if (_RUI_POSIX) {
 			if (_deskPath) { navigateTo(_deskPath); return; }
 			rpc('fs.diskFree', _driveList.length ? _driveList : ['/']).then(function(info) {
+				if (_epoch !== _navEpoch) return;
 				var p = info && info['DESKTOP'] && info['DESKTOP'].path;
 				if (p) { _deskPath = String(p); navigateTo(_deskPath); return; }
-				_navHomeDesktop();
-			}).catch(function() { _navHomeDesktop(); });
+				_navHomeDesktop(_epoch);
+			}).catch(function() { if (_epoch !== _navEpoch) return; _navHomeDesktop(_epoch); });
 			return;
 		}
-		_navHomeDesktop();
+		_navHomeDesktop(_epoch);
 	});
 	driveList.appendChild(deskBtn);
 
@@ -425,8 +428,13 @@ async function updateDriveDisplay() {
 			if (lnkJumpFromPath) {
 				var srcPath = lnkJumpFromPath;
 				lnkJumpFromPath = null;
+				var _bsEpoch = _navEpoch;   // ★ 校验期间用户若已导航 → 认新不认旧（不拉回、不擅自上下层）
 				// 验证来源目录仍存在
-				bridge.fs.list(srcPath).then(function() { navigateTo(srcPath); }).catch(function() {
+				bridge.fs.list(srcPath).then(function() {
+					if (_bsEpoch !== _navEpoch) return;
+					navigateTo(srcPath);
+				}).catch(function() {
+					if (_bsEpoch !== _navEpoch) return;
 					lnkJumpFromPath = null;
 					goUpOneLevel();
 				});
@@ -762,14 +770,34 @@ else console.error('[q2-roam] openFolderBtn missing — HTML 结构损坏');
 
 
 
-// ---- Responsive layout (buttons retreat when window narrows) ----
-// Cascade priority (low to high): filter - filesOnTop - sortBy - szMode - open.
-// Address bar inner has highest priority, never hidden.
-var MIN_FILTER_RW = 500;
-var MIN_FILESTOP_RW = 440;
-var MIN_SORT_RW = 380;
-var MIN_SZ_RW = 300;
-var MIN_OPEN_RW = 220;
+// ---- Responsive layout v2（2026-10-14 用户定案）：单行全显 → 双行退避 → 老退避序隐藏 ----
+// ① 单行（宽）：六件全显——地址框 flex 收缩（min 68px），不再提前隐藏任何按钮。
+// ② 收缩触「按钮将被裁剪」点（= 全件所需宽）→ 拆双行：第 1 行恒只地址框 / 第 2 行恒只按钮（原序）。
+// ③ 继续收缩：第 2 行按原退避序隐藏（filter → filesOnTop → sortBy → szMode → open），地址框永不隐藏。
+// 阈值一律由实测元件宽推导（禁魔数）；BAR_SAFE 抵 offsetWidth 取整误差，保全宽段「绝不裁切」。
+var BAR_SAFE = 3;
+var _barNeed = null;   // {single,row2,filterW,filesOnTopW,sortW,szW} —— 全可见时采一次（元件宽静态，永不失效）
+function _measureBarNeed() {
+	if (_barNeed) return _barNeed;
+	var szEl = document.getElementById('szModeGroup');
+	var addrEl = document.getElementById('addressBarInner');
+	var filterEl = document.querySelector('.filter-input-wrapper');
+	var openEl = document.getElementById('openFolderBtn');
+	var sortEl = document.getElementById('sortByGroup');
+	var ftEl = document.getElementById('filesOnTopBtn');
+	if (!szEl || !addrEl || !filterEl || !openEl || !sortEl || !ftEl) return null;
+	var szW = szEl.offsetWidth, filterW = filterEl.offsetWidth, openW = openEl.offsetWidth,
+		sortW = sortEl.offsetWidth, ftW = ftEl.offsetWidth;
+	if (!szW || !filterW || !openW || !sortW || !ftW) return null;   // 未布局（懒建/隐藏页）→ 本轮放弃，下次再试
+	var addrMin = parseFloat(getComputedStyle(addrEl).minWidth) || 68;
+	var btnW = szW + filterW + openW + sortW + ftW;
+	_barNeed = {
+		single: btnW + addrMin - 1 + BAR_SAFE,   // -1 = 单行下地址框 margin-left:-1px 与 S 组重叠
+		row2: btnW + BAR_SAFE,
+		filterW: filterW, filesOnTopW: ftW, sortW: sortW, szW: szW
+	};
+	return _barNeed;
+}
 var MIN_FOOTER_W = 240;  // hide new-file button → narrow
 var MIN_FOOTER_EXTREME = 170; // below: hide new-folder button → extreme
 
@@ -794,18 +822,30 @@ function checkAndApplyResponsive() {
 	// Address bar row — based on right panel width (kyContent)
 	if (kyContent) {
 		var rw = kyContent.clientWidth;
+		var wrapper = document.querySelector('.address-bar-wrapper');
 		var sortByGroup = document.getElementById('sortByGroup');
 		var szModeGroup = document.getElementById('szModeGroup');
 		var filterWrapper = document.querySelector('.filter-input-wrapper');
 		var filesOnTopBtn = document.getElementById('filesOnTopBtn');
 		var openBtn = document.getElementById('openFolderBtn');
-
-		// Cascade: hide lower-priority items first, address bar (flex:1) gets space
-		if (filterWrapper) filterWrapper.style.display = (rw < MIN_FILTER_RW) ? 'none' : '';
-		if (filesOnTopBtn) filesOnTopBtn.style.display = (rw < MIN_FILESTOP_RW) ? 'none' : '';
-		if (sortByGroup) sortByGroup.style.display = (rw < MIN_SORT_RW) ? 'none' : '';
-		if (szModeGroup) szModeGroup.style.display = (rw < MIN_SZ_RW) ? 'none' : '';
-		if (openBtn) openBtn.style.display = (rw < MIN_OPEN_RW) ? 'none' : '';
+		var need = _measureBarNeed();
+		if (need) {
+			// ① 双行触发：rw 跌破单行全件所需宽（再缩 1px 按钮就会被裁）→ 拆双行
+			var twoRow = rw < need.single;
+			// ② 双行段级联（老退避序）：第 2 行装不下才逐件隐藏——filter → filesOnTop → sortBy → szMode → open
+			var t = need.row2;
+			var hideFilter = rw < t;
+			t -= need.filterW;     var hideFilesOnTop = rw < t;
+			t -= need.filesOnTopW; var hideSort = rw < t;
+			t -= need.sortW;       var hideSz = rw < t;
+			t -= need.szW;         var hideOpen = rw < t;
+			if (wrapper) wrapper.classList.toggle('rm-two-row', twoRow);
+			if (filterWrapper) filterWrapper.style.display = hideFilter ? 'none' : '';
+			if (filesOnTopBtn) filesOnTopBtn.style.display = hideFilesOnTop ? 'none' : '';
+			if (sortByGroup) sortByGroup.style.display = hideSort ? 'none' : '';
+			if (szModeGroup) szModeGroup.style.display = hideSz ? 'none' : '';
+			if (openBtn) openBtn.style.display = hideOpen ? 'none' : '';
+		}
 	}
 
 	// Recent section: hide when height too small

@@ -141,6 +141,25 @@ test('search-ui.html: 查询记录变量卫生（_lastQ 幽灵防回归）', () 
     assert.ok(/_lastQuery\s*=\s*q\s*;/.test(html), 'dos() 必须写 _lastQuery=q（执行口径唯一真理源）');
 });
 
+// ── search 投递/恢复语义静态卫生（2026-10-12 定案：启动即搜索根治——恢复只回填不搜 / 投递定向禁广播） ──
+test('search.js: 恢复 ≠ 搜索（run 唯一开关 + 定向投递单点）', () => {
+    const js = fs.readFileSync(path.join(ROOT, 'server-app', 'goods', 'search', 'search.js'), 'utf8');
+    assert.ok(js.indexOf('function _setSearchScope') === -1, '旧全量广播 _setSearchScope 必须删除');
+    assert.ok(js.indexOf('function _postToTab') !== -1, '定向投递机 _postToTab 缺失');
+    assert.ok(/_searchPending = msg;/.test(js), '单一待发槽写入缺失');
+    assert.ok(!/postMessage\(\{\s*type:\s*'qqqide-search-set-scope'/.test(js), '禁令：直投 set-scope 绕过待发槽（重复/跨卡投递根因）');
+    assert.ok(/postMessage\(msg, '\*'\)/.test(js), '待发槽补发出口缺失（就绪补发主路）');
+    const restore = js.slice(js.indexOf('function _restoreSearchTabs'));
+    assert.ok(restore.indexOf('run: true') === -1, '恢复路径不得携带 run:true（启动即搜索回潮红线）');
+    assert.ok(/lazy: true/.test(restore) && /activate: false/.test(restore), '恢复卡必须懒建 + 不抢活跃标签');
+});
+test('search-ui.html: run/focus 仅显式消息触发（恢复只回填）', () => {
+    const html = fs.readFileSync(path.join(ROOT, 'server-app', 'goods', 'search', 'search-ui.html'), 'utf8');
+    assert.ok(/if\(typeof d\.query==='string'\)Q\.value=d\.query/.test(html), '回填不搜语义缺失');
+    assert.ok(/if\(d\.run===true&&Q\.value\)\{_add\(0,Q\.value\);trg\(\)\}/.test(html), 'run 唯一自动搜索开关缺失');
+    assert.ok(!/if\(Q\.value\)trg\(\);Q\.focus\(\)/.test(html), '旧无条件重搜行必须不存在（跨卡重搜根因）');
+});
+
 // ── 实机 rg 加固（有二进制才跑；公开 CI 无 rg 自动跳过）──
 const RG = path.join(ROOT, 'engines', 'ripgrep', process.platform === 'win32' ? 'rg.exe' : 'rg');
 test('live ripgrep: --null --column --stats 帧解析（实机）', { skip: !fs.existsSync(RG) }, () => {

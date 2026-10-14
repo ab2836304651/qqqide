@@ -130,6 +130,11 @@ const EN_MINI: Record<string, string> = {
     'main.boot.retrying': 'Retrying…',
     'main.boot.stillFail': 'Still unable to connect. Please try again later…',
     'main.boot.retryFail': 'Retry failed: {e}',
+    // 受控浏览器起始页（browser-host.ts；词条全缺时的兜底）
+    'main.browserHost.title': 'qd (qqqide) Browser',
+    'main.browserHost.startHosted': 'This window is managed by qqqide: the AI operates web pages through it.',
+    'main.browserHost.startMonitor': 'You can watch live progress here while a task runs; when you are needed (e.g. to sign in), the AI waits here for you.',
+    'main.browserHost.startHint': 'Closing this window quits the browser; your sign-in state is kept for next time.',
 };
 
 // ── 主进程取词入口 ──

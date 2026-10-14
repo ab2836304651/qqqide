@@ -261,7 +261,6 @@
             "removeTitle": "Remove Item",
             "removeConfirm": "Are you sure you want to remove \"{n}\" from the AI Viewport?",
             "removeBtn": "Remove",
-            "removeAsk": "Remove \"{n}\"?",
             "openElsewhere": "⚠️ This item is already open as the main folder in another window",
             "clearedBusy": "⚠️ Main folder is occupied by another window; AI viewport cleared to a clean state",
             "filterPh": "Filter...",
@@ -427,6 +426,10 @@
         "timelineNoRoot": "Unable to determine the project root directory for this file; timeline is unavailable",
         "timelineOpenFail": "Failed to open the timeline window. Please try again later.",
         "minimap": "Minimap",
+        "run": "Run",
+        "runNoInterp": "Built-in interpreter not ready (missing components)",
+        "runNoTerm": "Unable to open terminal",
+        "runFail": "Run failed",
         "tabs": {
             "close": "Close Tab",
             "closeOthers": "Close Other Tabs",
@@ -838,6 +841,8 @@
             "showKey": "Show/Hide",
             "model": "Model Name",
             "modelPh": "Model name from provider documentation",
+            "maxTokens": "Max output tokens (optional)",
+            "maxTokensPh": "Empty = provider default (recommended)",
             "fetchModels": "Fetch Model List",
             "probeLocal": "Detect Local Models",
             "needBase": "Please enter the API endpoint first",
@@ -924,7 +929,8 @@
         "waitNew": "AI has not yet replied to the current task. Please wait before creating a new one.",
         "recoverPrefix": "Network reconnected. Previous floor interruption record:",
         "recoverSuffix": "| Please continue completing the original task based on the full conversation context.",
-        "retryExhausted": "Retried 3 times without success. This may be due to exhausted billing/quotas or server issues. Please try again later.",
+        "retryExhausted": "Failed after 3 retries. Please try again later. If the issue persists, check your network, account, or service provider settings.",
+        "retryExhaustedDetail": "Retried 3 times without success — last error: {msg}",
         "pathIncompatible": "Path contains incompatible characters and cannot be appended",
         "bulletTrunc": "\n\n... [Middle content truncated, original {0}KB] ...\n\n",
         "exhaustedMsg": "⚠ Maximum tool call limit (200) reached, but AI failed to generate a final response. Context retained; you may continue asking questions.",
@@ -1021,7 +1027,8 @@
             "intDone": "── Ctrl+C · Terminated {0} process(es) ──",
             "intIdle": "── Ctrl+C · No running command ──",
             "intSig": "── Ctrl+C · Interrupt signal sent ──",
-            "intRestart": "── Ctrl+C · Shell upgrade requires instance restart to take effect ──"
+            "intRestart": "── Ctrl+C · Shell upgrade requires instance restart to take effect ──",
+            "dropNoPath": "── Ignored {0} items on drop (no local path) ──"
         },
         "git": {
             "refresh": "Refresh",
@@ -1288,7 +1295,9 @@
             "intFail": "[Interrupt Failed] {0}",
             "terminated": "Terminated · Restart to relaunch",
             "termLine": "── Session terminated (Restart to resume) ──",
-            "deadHint": "Already in terminated state · Restart to relaunch"
+            "deadHint": "Already in terminated state · Restart to relaunch",
+            "dropNoPath": "── Ignored {0} items on drop (no local path) ──",
+            "dropIdle": "Session not ready · Drop not inserted"
         },
         "dsecret": {
             "targetProject": "Target Project",
@@ -2230,6 +2239,12 @@
             "saveConsole": "Save Console Logs",
             "logFile": "Log File",
             "saveFile": "Save File"
+        },
+        "browserHost": {
+            "title": "qd (qqqide) Browser",
+            "startHosted": "This window is managed by qqqide: the AI operates web pages through it.",
+            "startMonitor": "You can watch live progress here while a task runs; when you are needed (e.g. to sign in), the AI waits here for you.",
+            "startHint": "Closing this window quits the browser; your sign-in state is kept for next time."
         },
         "browser": {
             "openFailTitle": "Unable to open browser automatically — qd (qqqide)",

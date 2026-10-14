@@ -266,6 +266,15 @@
       });
     }
 
+    // ★ 懒建补建（opts.lazy）：首次激活构建内容——pane 可见性只由本函数翻转，此处是唯一时机
+    if (newTab && newTab._lazyRender) {
+      var _lazyFn = newTab._lazyRender;
+      newTab._lazyRender = null;
+      var _lazyPane = grp.contentEl.querySelector('.qqq-tab-pane[data-tab-id="' + tabId + '"]');
+      try { _lazyFn(_lazyPane, newTab); }
+      catch (e) { if (_lazyPane) _lazyPane.textContent = 'render error: ' + (e && e.message); }
+    }
+
     // ★ 2026-08-25: custom tab 可见性事件驱动通知（kmd here 指示牌/焦点态零轮询）——
     //   tab 切走/切回唯一中心路径（点击/滚轮/右键重开/单例激活/恢复全收敛于此）；
     //   active 标志供 renderFn/kmd:init 初始态兜底（快速切走窗口期消息丢失时 kmd:init 读真实值）
@@ -1107,12 +1116,18 @@
     }
 
     // render content
+    // ★ lazy（opts.lazy，仅多实例恢复卡）：内容构建推迟到首次激活——启动期零 iframe 解析；
+    //   补建唯一触发点 = activateTab（pane 可见性只由它翻转）
     if (renderFn) {
-      try { renderFn(pane, tab); }
-      catch (e) { pane.textContent = 'render error: ' + (e && e.message); }
+      if (opts && opts.lazy) { tab._lazyRender = renderFn; }
+      else {
+        try { renderFn(pane, tab); }
+        catch (e) { pane.textContent = 'render error: ' + (e && e.message); }
+      }
     }
 
-    activateTab(gaeaGrp, tabId);
+    // ★ activate:false（恢复卡不抢活跃标签）——缺省 true，既有调用零变化
+    if (!(opts && opts.activate === false)) activateTab(gaeaGrp, tabId);
     return tab;
   }
 
@@ -1605,13 +1620,15 @@
       setTimeout(function () {
         var grp = getGaeaGroup();
         if (!grp) return;
-        for (var i = 0; i < grp.tabs.length; i++) {
-          var t = grp.tabs[i];
-          if ((t.gaeaId === gaeaTab.gaeaId || t.id === gaeaTab.gaeaId) && window.qqqTabs) {
-            window.qqqTabs.activateTab(grp, t.id);
-            break;
-          }
+        // ★ 多实例 goods：同 gaeaId 多张卡按 title 精确回认（标题 = 卡片上下文唯一可辨身份），
+        //   无 title 命中才回落首张——单实例 goods 恒单候选，行为零变化
+        var cands = grp.tabs.filter(function (t) { return t.gaeaId === gaeaTab.gaeaId || t.id === gaeaTab.gaeaId; });
+        if (cands.length === 0 || !window.qqqTabs) return;
+        var pick = cands[0];
+        for (var i = 0; i < cands.length; i++) {
+          if (cands[i].title === gaeaTab.title) { pick = cands[i]; break; }
         }
+        window.qqqTabs.activateTab(grp, pick.id);
       }, 800);
     }).catch(function () { });
 

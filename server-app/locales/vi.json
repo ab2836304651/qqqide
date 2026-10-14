@@ -261,7 +261,6 @@
             "removeTitle": "Xóa mục",
             "removeConfirm": "Bạn có chắc chắn muốn xóa「{n}」khỏi khung nhìn AI không?",
             "removeBtn": "Xóa",
-            "removeAsk": "Xóa 「{n}」?",
             "openElsewhere": "⚠️ Dự án này đã được mở dưới dạng thư mục chính trong một cửa sổ khác",
             "clearedBusy": "⚠️ Thư mục chính đang bị chiếm dụng bởi cửa sổ khác, khung nhìn AI đã được làm sạch",
             "filterPh": "Lọc...",
@@ -427,6 +426,10 @@
         "timelineNoRoot": "Không thể xác định thư mục gốc của dự án cho tệp này, dòng thời gian không khả dụng",
         "timelineOpenFail": "Không thể mở cửa sổ dòng thời gian, vui lòng thử lại sau",
         "minimap": "Bản đồ nhỏ",
+        "run": "Chạy",
+        "runNoInterp": "Trình thông dịch tích hợp chưa sẵn sàng (thiếu thành phần)",
+        "runNoTerm": "Không thể mở terminal",
+        "runFail": "Chạy thất bại",
         "tabs": {
             "close": "Đóng tab",
             "closeOthers": "Đóng các tab khác",
@@ -838,6 +841,8 @@
             "showKey": "Hiển thị/Ẩn",
             "model": "Tên mô hình",
             "modelPh": "Tên mô hình trong tài liệu của nhà cung cấp dịch vụ",
+            "maxTokens": "Tối đa token đầu ra (tùy chọn)",
+            "maxTokensPh": "Để trống = mặc định nhà cung cấp (khuyến nghị)",
             "fetchModels": "Lấy danh sách mô hình",
             "probeLocal": "Phát hiện mô hình cục bộ",
             "needBase": "Vui lòng nhập địa chỉ API trước",
@@ -924,7 +929,8 @@
         "waitNew": "AI chưa phản hồi cho tác vụ hiện tại, vui lòng chờ trước khi tạo mới",
         "recoverPrefix": "Kết nối mạng đã được khôi phục. Ghi chép gián đoạn trước đó:",
         "recoverSuffix": "｜Vui lòng dựa trên ngữ cảnh hội thoại đầy đủ để tiếp tục hoàn thành tác vụ ban đầu.",
-        "retryExhausted": "Đã thử lại 3 lần nhưng vẫn không thành công, có thể do hết hạn mức/thanh toán hoặc lỗi máy chủ, vui lòng thử lại sau",
+        "retryExhausted": "Đã thử lại 3 lần nhưng vẫn không thành công, vui lòng thử lại sau; nếu vẫn tiếp tục thất bại, hãy kiểm tra kết nối mạng, tài khoản hoặc cấu hình nhà cung cấp dịch vụ",
+        "retryExhaustedDetail": "Đã thử lại 3 lần nhưng không thành công — lỗi gần nhất: {msg}",
         "pathIncompatible": "Đường dẫn chứa ký tự không tương thích, không thể đính kèm",
         "bulletTrunc": "\n\n... [Phần giữa đã bị cắt bớt, bản gốc {0}KB] ...\n\n",
         "exhaustedMsg": "⚠ Đã đạt số lần gọi công cụ tối đa (200), nhưng AI không tạo được câu trả lời cuối cùng. Ngữ cảnh hội thoại vẫn được giữ lại, bạn có thể tiếp tục đặt câu hỏi.",
@@ -1021,7 +1027,8 @@
             "intDone": "── Ctrl+C · Đã chấm dứt {0} tiến trình ──",
             "intIdle": "── Ctrl+C · Không có lệnh nào đang chạy ──",
             "intSig": "── Ctrl+C · Đã gửi tín hiệu ngắt ──",
-            "intRestart": "── Ctrl+C · Nâng cấp shell cần khởi động lại instance để có hiệu lực ──"
+            "intRestart": "── Ctrl+C · Nâng cấp shell cần khởi động lại instance để có hiệu lực ──",
+            "dropNoPath": "── Bỏ qua {0} mục khi kéo thả (không có đường dẫn cục bộ) ──"
         },
         "git": {
             "refresh": "Làm mới",
@@ -1288,7 +1295,9 @@
             "intFail": "[Interrupt thất bại] {0}",
             "terminated": "Đã chấm dứt · Có thể Restart để khởi động lại",
             "termLine": "── Phiên đã kết thúc (Restart để khởi động lại) ──",
-            "deadHint": "Đã ở trạng thái kết thúc · Nhấn Restart để khởi động lại"
+            "deadHint": "Đã ở trạng thái kết thúc · Nhấn Restart để khởi động lại",
+            "dropNoPath": "── Bỏ qua {0} mục khi kéo thả (không có đường dẫn cục bộ) ──",
+            "dropIdle": "Phiên chưa sẵn sàng · Chưa chèn khi kéo thả"
         },
         "dsecret": {
             "targetProject": "Dự án mục tiêu",
@@ -2230,6 +2239,12 @@
             "saveConsole": "Lưu nhật ký bảng điều khiển",
             "logFile": "Tệp nhật ký",
             "saveFile": "Lưu tệp"
+        },
+        "browserHost": {
+            "title": "qd (qqqide) Trình duyệt",
+            "startHosted": "Cửa sổ này do qqqide quản lý: AI thực hiện thao tác web qua đây.",
+            "startMonitor": "Trong khi tác vụ chạy, bạn có thể xem tiến độ trực tiếp tại đây; khi cần bạn (ví dụ đăng nhập), AI sẽ chờ tại đây.",
+            "startHint": "Đóng cửa sổ này là thoát; trạng thái đăng nhập được giữ cho lần sau."
         },
         "browser": {
             "openFailTitle": "Không thể tự động mở trình duyệt — qd (qqqide)",

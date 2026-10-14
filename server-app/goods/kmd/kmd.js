@@ -12,9 +12,10 @@
 //   ② IPC 中转器：主进程 kmd 输出推送 → 对应 iframe postMessage
 // iframe 通信协议：
 //   iframe → parent: {type:'kmd:ready'} / {type:'kmd:exec', text} / {type:'kmd:kill', restart}
-//   parent → iframe: {type:'kmd:init', sessionId, cwd, shellType} / {type:'kmd:out', stream, data}
+//   parent → iframe: {type:'kmd:init', sessionId, cwd, shellType[, fileName 预填, runCmd 会话就绪即执行]} / {type:'kmd:out', stream, data}
 //                     {type:'kmd:exit', code} / {type:'kmd:restarted'} / {type:'kmd:cd', cwd}
 // roam 空区 x 键 / 右键 kmd → parent 收到 {type:'qqq-roam-open-kmd', path} → 打开 kmd 并定位到该目录
+// ★ 编辑器「运行」→ window.__qqqKmdRun(cwd, cmd)（core/run-machine.js 唯一消费方）→ runCmd 自动执行
 // ============================================================================
 (function () {
     'use strict';
@@ -45,8 +46,8 @@
 
         // ★ 2026-08-18 多开语义定案：x 键/右键/全局召回一律打开【新】kmd tab（不做 cd 复用），
         //   并播放终端音效。pending 由 openKmdTab 内 build 一次性消费；失败即清防陈旧目录。
-        function _openNewKmd(path, fileName) {
-            _pendingKmd = { cwd: path || null, fileName: fileName || null };
+        function _openNewKmd(path, fileName, runCmd) {
+            _pendingKmd = { cwd: path || null, fileName: fileName || null, runCmd: runCmd || null };
             var ok = false;
             try { ok = openKmdTab(); } catch (_) { }
             if (!ok) _pendingKmd = null;
@@ -55,6 +56,8 @@
         }
         // 全局 x 键召回入口（key-hook → shell-menu → 此处；shell.js 兜底直连同款）
         window.__qqqKmdOpen = function (path) { _openNewKmd(path); };
+        // ★ 编辑器「运行」入口（core/run-machine.js 唯一消费方）：新 kmd 会话就绪即执行 runCmd
+        window.__qqqKmdRun = function (cwd, runCmd) { return _openNewKmd(cwd || null, null, runCmd || null); };
 
         // ── roam 空区 x 键/右键「kmd」→ 打开一个新 kmd 并进入指定目录 ──
         window.addEventListener('message', function (e) {
@@ -111,6 +114,7 @@
                 // ★ roam 空区指定目录优先（一次性消费，工具栏打开仍回工作空间根）
                 var root = (_pendingKmd && _pendingKmd.cwd) || window._workspaceRoot || '';
                 var kmdFile = _pendingKmd ? _pendingKmd.fileName : null; // 单文件选中 → 预填文件名（2026-08-25 极简规则）
+                var kmdRunCmd = _pendingKmd ? _pendingKmd.runCmd : null; // 编辑器「运行」→ 会话就绪即执行（不预填）
                 _pendingKmd = null;
                 if (!root && window.parent && window.parent._workspaceRoot) root = window.parent._workspaceRoot;
 
@@ -132,7 +136,7 @@
                     try {
                         // ★ 2026-09-16：默认 shell 按平台（mac → zsh；win → cmd）
                         var _kmdDefShell = (/Mac/i.test(navigator.platform || '') || /Macintosh/.test(navigator.userAgent || '')) ? 'zsh' : (/Win/i.test(navigator.platform || '') ? 'cmd' : 'bash');
-                        iframe.contentWindow.postMessage({ type: 'kmd:init', sessionId: sid, cwd: root, shellType: _kmdDefShell, title: tab.title, fileName: kmdFile, active: !!tab.active }, '*');
+                        iframe.contentWindow.postMessage({ type: 'kmd:init', sessionId: sid, cwd: root, shellType: _kmdDefShell, title: tab.title, fileName: kmdFile, runCmd: kmdRunCmd || undefined, active: !!tab.active }, '*');
                     } catch (_) { }
                 };
                 window.addEventListener('message', kmdInit);

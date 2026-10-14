@@ -36,8 +36,11 @@
   var ICON_SIZE = 32;        // 图标帧内容 32x32（老 extract_icon LARGEICON）
   var BG_LIGHT = '#fef6e3';
   var BG_DARK = '#1B1411';
-  var CHECKER_A = '#fdf6e3';
-  var CHECKER_B = '#e6e1cf';
+  // 棋盘格双色 = 主题变量（qqqide-theme.js 亮暗两套；亮=暖米 / 暗=深灰）——
+  //   引用变量而非写死色值：主题切换即时重绘，无需重建帧；
+  //   末尾字面量 = 主题机未就绪兜底（= 亮色口径）
+  var CHECKER_A = 'var(--frame-checker-a,#fdf6e3)';
+  var CHECKER_B = 'var(--frame-checker-b,#e6e1cf)';
   var WM_LARGE = 'assets/frames/al.png';
   var WM_SMALL = 'assets/frames/as.png';
   var TEXT_FONT_DEFAULT = 14;
@@ -272,8 +275,11 @@
     if (!img) return;
     img.onload = function () {
       _revealFrameContent(dom);
-      var nw = natW || img.naturalWidth || 0;
-      var nh = natH || img.naturalHeight || 0;
+      // ★ 尺寸真值 = 解码后的位图（naturalWidth/Height），优先于探测/生成报回的尺寸：
+      //   探测只认码流声明，与旋转/朝向修正后的实际位图可能不同——按探测值铺图 = 拉扯
+      //   （竖拍视频相框横拉实锤：码流 1920x1080 + 旋转存储，预览产物实为 162x288 竖图）
+      var nw = img.naturalWidth || natW || 0;
+      var nh = img.naturalHeight || natH || 0;
       if (mode === 'fill') {
         img.style.width = dom._pw + 'px';
         img.style.height = dom._ph + 'px';
